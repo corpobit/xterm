@@ -42,8 +42,8 @@ jobs:
         LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
         
         if [ -z "$LATEST_TAG" ]; then
-          echo "No previous tags found, will use current version"
-          echo "should_bump=false" >> $GITHUB_OUTPUT
+          echo "No previous tags found, will create first tag"
+          echo "should_bump=true" >> $GITHUB_OUTPUT
           echo "new_version=${{ steps.current_version.outputs.current_version }}" >> $GITHUB_OUTPUT
         else
           # Remove 'v' prefix if present

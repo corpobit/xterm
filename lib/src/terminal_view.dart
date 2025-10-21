@@ -7,6 +7,7 @@ import 'package:xterm/src/core/input/keys.dart';
 import 'package:xterm/src/terminal.dart';
 import 'package:xterm/src/ui/controller.dart';
 import 'package:xterm/src/ui/cursor_type.dart';
+import 'package:xterm/src/ui/selection_mode.dart';
 import 'package:xterm/src/ui/custom_text_edit.dart';
 import 'package:xterm/src/ui/gesture/gesture_handler.dart';
 import 'package:xterm/src/ui/input_map.dart';
@@ -19,6 +20,9 @@ import 'package:xterm/src/ui/shortcut/shortcuts.dart';
 import 'package:xterm/src/ui/terminal_text_style.dart';
 import 'package:xterm/src/ui/terminal_theme.dart';
 import 'package:xterm/src/ui/themes.dart';
+import 'package:xterm/src/ui/find/find_controller.dart';
+import 'package:xterm/src/ui/find/find_widget.dart';
+import 'package:xterm/src/ui/buffer_usage_indicator.dart';
 
 class TerminalView extends StatefulWidget {
   const TerminalView(
@@ -44,6 +48,7 @@ class TerminalView extends StatefulWidget {
     this.alwaysShowCursor = false,
     this.showLineNumbers = true,
     this.showMinimap = false,
+    this.showBufferIndicator = true,
     this.bookmarks = const {},
     this.bookmarkNames = const {},
     this.onBookmarkToggle,
@@ -132,6 +137,9 @@ class TerminalView extends StatefulWidget {
   /// Whether to show a minimap in the terminal. [false] by default.
   final bool showMinimap;
 
+  /// Whether to show the buffer usage indicator. [true] by default.
+  final bool showBufferIndicator;
+
   /// Set of bookmarked line numbers
   final Set<int> bookmarks;
 
@@ -195,6 +203,8 @@ class TerminalViewState extends State<TerminalView>  with AutomaticKeepAliveClie
 
   late ScrollController _scrollController;
 
+  late FindController _findController;
+
   MouseCursor _currentCursor = SystemMouseCursors.text;
   int? _hoveredLineNumber;
 
@@ -224,11 +234,39 @@ class TerminalViewState extends State<TerminalView>  with AutomaticKeepAliveClie
     );
   }
 
+  /// Scroll to a specific match in the terminal
+  void _scrollToMatch(CellOffset matchOffset) {
+    // Calculate the pixel offset for the match
+    final lineHeight = renderTerminal.lineHeight;
+    final targetOffset = matchOffset.y * lineHeight;
+    
+    // Get the viewport height to calculate center position
+    final viewportHeight = _scrollController.position.viewportDimension;
+    final linesInViewport = viewportHeight / lineHeight;
+    
+    // Position the match in the middle of the viewport (with some padding)
+    final centerOffset = (linesInViewport / 2) * lineHeight;
+    final adjustedOffset = (targetOffset - centerOffset).clamp(0.0, _scrollController.position.maxScrollExtent);
+    
+    // Scroll to the target match
+    _scrollController.animateTo(
+      adjustedOffset,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
+  }
+
   @override
   void initState() {
     _focusNode = widget.focusNode ?? FocusNode();
     _controller = widget.controller ?? TerminalController();
     _scrollController = widget.scrollController ?? ScrollController();
+    _findController = FindController(
+      terminal: widget.terminal,
+      controller: _controller,
+      theme: widget.theme,
+    );
+    _findController.onScrollToMatch = _scrollToMatch;
     _shortcutManager = ShortcutManager(
       shortcuts: widget.shortcuts ?? defaultTerminalShortcuts,
     );
@@ -270,12 +308,14 @@ class TerminalViewState extends State<TerminalView>  with AutomaticKeepAliveClie
     if (widget.scrollController == null) {
       _scrollController.dispose();
     }
+    _findController.dispose();
     _shortcutManager.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     Widget child = Scrollable(
       key: _scrollableKey,
       controller: _scrollController,
@@ -295,6 +335,7 @@ class TerminalViewState extends State<TerminalView>  with AutomaticKeepAliveClie
           alwaysShowCursor: widget.alwaysShowCursor,
           showLineNumbers: widget.showLineNumbers,
           showMinimap: widget.showMinimap,
+          showBufferIndicator: widget.showBufferIndicator,
           bookmarks: widget.bookmarks,
           bookmarkNames: widget.bookmarkNames,
           onBookmarkToggle: widget.onBookmarkToggle,
@@ -355,6 +396,7 @@ class TerminalViewState extends State<TerminalView>  with AutomaticKeepAliveClie
     child = TerminalActions(
       terminal: widget.terminal,
       controller: _controller,
+      findController: _findController,
       child: child,
     );
 
@@ -401,24 +443,22 @@ class TerminalViewState extends State<TerminalView>  with AutomaticKeepAliveClie
       onHover: (event) {
         try {
           final renderTerminal = this.renderTerminal;
-          if (renderTerminal != null) {
-            final cursor = renderTerminal.getCursorForPosition(event.localPosition);
-            if (_currentCursor != cursor) {
-              setState(() {
-                _currentCursor = cursor;
-              });
-            }
-           
-           // Track line number hover
-           if (widget.showLineNumbers) {
-             final hoveredLine = renderTerminal.getHoveredLineNumber(event.localPosition);
-             if (_hoveredLineNumber != hoveredLine) {
-               setState(() {
-                 _hoveredLineNumber = hoveredLine;
-               });
-             }
-           }
+          final cursor = renderTerminal.getCursorForPosition(event.localPosition);
+          if (_currentCursor != cursor) {
+            setState(() {
+              _currentCursor = cursor;
+            });
           }
+         
+         // Track line number hover
+         if (widget.showLineNumbers) {
+           final hoveredLine = renderTerminal.getHoveredLineNumber(event.localPosition);
+           if (_hoveredLineNumber != hoveredLine) {
+             setState(() {
+               _hoveredLineNumber = hoveredLine;
+             });
+           }
+         }
         } catch (e) {
           // Ignore errors
         }
@@ -438,6 +478,24 @@ class TerminalViewState extends State<TerminalView>  with AutomaticKeepAliveClie
       color: widget.theme.background.withOpacity(widget.backgroundOpacity),
       padding: widget.padding,
       child: child,
+    );
+
+    // Add find widget and buffer usage indicator as overlays
+    child = Stack(
+      children: [
+        child,
+        FindWidget(
+          controller: _findController,
+          theme: widget.theme,
+          textStyle: widget.textStyle.toTextStyle(),
+        ),
+        if (widget.showBufferIndicator)
+          BufferUsageIndicator(
+            terminal: widget.terminal,
+            theme: widget.theme,
+            textStyle: widget.textStyle.toTextStyle(),
+          ),
+      ],
     );
 
     return child;
@@ -539,6 +597,49 @@ class TerminalViewState extends State<TerminalView>  with AutomaticKeepAliveClie
       return resultOverride;
     }
 
+    // Handle find shortcuts
+    if (event is KeyDownEvent) {
+      final isFindShortcut = (HardwareKeyboard.instance.isControlPressed && 
+                             event.logicalKey == LogicalKeyboardKey.keyF) ||
+                            (HardwareKeyboard.instance.isMetaPressed && 
+                             event.logicalKey == LogicalKeyboardKey.keyF);
+      
+      if (isFindShortcut) {
+        _findController.toggle();
+        return KeyEventResult.handled;
+      }
+    }
+
+    // Handle copy/paste shortcuts
+    if (event is KeyDownEvent) {
+      final isCtrlPressed = HardwareKeyboard.instance.isControlPressed;
+      final isMetaPressed = HardwareKeyboard.instance.isMetaPressed;
+      final isModifierPressed = isCtrlPressed || isMetaPressed;
+      
+      if (isModifierPressed) {
+        switch (event.logicalKey) {
+          case LogicalKeyboardKey.keyA:
+            // Select all text
+            _selectAllText();
+            return KeyEventResult.handled;
+            
+          case LogicalKeyboardKey.keyC:
+            // Copy selected text
+            _copySelectedText();
+            return KeyEventResult.handled;
+            
+          case LogicalKeyboardKey.keyV:
+            // Paste from clipboard
+            _pasteFromClipboard();
+            return KeyEventResult.handled;
+            
+            
+          default:
+            break;
+        }
+      }
+    }
+
     // ignore: invalid_use_of_protected_member
     final shortcutResult = _shortcutManager.handleKeypress(
       focusNode.context!,
@@ -591,6 +692,46 @@ class TerminalViewState extends State<TerminalView>  with AutomaticKeepAliveClie
       position.jumpTo(position.maxScrollExtent);
     }
   }
+
+  /// Reset the find state (useful when terminal buffer is cleared)
+  void resetFindState() {
+    _findController.resetFindState();
+  }
+
+  /// Select all text in the terminal
+  void _selectAllText() {
+    final buffer = widget.terminal.buffer;
+    if (buffer.lines.length == 0) return;
+    
+    _controller.setSelection(
+      buffer.createAnchor(0, buffer.height - buffer.viewHeight),
+      buffer.createAnchor(buffer.viewWidth, buffer.height - 1),
+      mode: SelectionMode.line,
+    );
+  }
+
+  /// Copy selected text to clipboard
+  void _copySelectedText() {
+    final selection = _controller.selection;
+    if (selection == null) return;
+    
+    final selectedText = widget.terminal.buffer.getText(selection);
+    if (selectedText.isNotEmpty) {
+      Clipboard.setData(ClipboardData(text: selectedText));
+    }
+  }
+
+  /// Paste text from clipboard
+  void _pasteFromClipboard() async {
+    final clipboardData = await Clipboard.getData(Clipboard.kTextPlain);
+    if (clipboardData?.text != null && clipboardData!.text!.isNotEmpty) {
+      // Use the terminal's paste method
+      widget.terminal.paste(clipboardData.text!);
+      _controller.clearSelection();
+      _scrollToBottom();
+    }
+  }
+
   
   @override
   bool get wantKeepAlive => true;
@@ -613,6 +754,7 @@ class _TerminalView extends LeafRenderObjectWidget {
     required this.alwaysShowCursor,
     required this.showLineNumbers,
     required this.showMinimap,
+    required this.showBufferIndicator,
     required this.bookmarks,
     required this.bookmarkNames,
     required this.onBookmarkToggle,
@@ -648,6 +790,8 @@ class _TerminalView extends LeafRenderObjectWidget {
   final bool showLineNumbers;
 
   final bool showMinimap;
+
+  final bool showBufferIndicator;
 
   final Set<int> bookmarks;
 

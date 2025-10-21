@@ -125,6 +125,7 @@ class _TerminalPageState extends State<TerminalPage> {
           controller: terminalController,
           autofocus: true,
           backgroundOpacity: 0.7,
+          showMinimap: true,
           onSecondaryTapDown: (details, offset) async {
             final selection = terminalController.selection;
             if (selection != null) {

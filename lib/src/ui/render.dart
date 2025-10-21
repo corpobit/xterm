@@ -630,11 +630,10 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     const double minimapWidth = 120.0;
     const double minimapHeight = 120.0;
     const double minimapPadding = 12.0;
-    const double topBarHeight = 62.0; // Height of the top bar
     
     final minimapRect = Rect.fromLTWH(
       size.width - minimapWidth - minimapPadding,
-      topBarHeight + minimapPadding, // Position below the top bar
+      minimapPadding, // Position at top-right
       minimapWidth,
       minimapHeight,
     );
@@ -981,11 +980,10 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     const double minimapWidth = 120.0;
     const double minimapHeight = 120.0;
     const double minimapPadding = 12.0;
-    const double topBarHeight = 62.0; // Height of the top bar
     
     return Rect.fromLTWH(
       size.width - minimapWidth - minimapPadding,
-      topBarHeight + minimapPadding, // Position below the top bar
+      minimapPadding, // Position at top-right
       minimapWidth,
       minimapHeight,
     );
@@ -997,8 +995,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     if (minimapRect == null || !minimapRect.contains(position)) return;
     
     const double minimapPadding = 12.0;
-    const double topBarHeight = 62.0; // Height of the top bar
-    final relativeY = position.dy - (topBarHeight + minimapPadding);
+    final relativeY = position.dy - minimapPadding;
     final minimapHeight = 120.0; // This is now a fixed height, so no need to calculate it from size.height
     
     // Calculate the target scroll position

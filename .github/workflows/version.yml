@@ -40,15 +40,15 @@ jobs:
       run: |
         # Get the latest tag
         LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+        CURRENT_VERSION="${{ steps.current_version.outputs.current_version }}"
         
         if [ -z "$LATEST_TAG" ]; then
           echo "No previous tags found, will create first tag"
           echo "should_bump=true" >> $GITHUB_OUTPUT
-          echo "new_version=${{ steps.current_version.outputs.current_version }}" >> $GITHUB_OUTPUT
+          echo "new_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
         else
           # Remove 'v' prefix if present
           LATEST_TAG_CLEAN=${LATEST_TAG#v}
-          CURRENT_VERSION="${{ steps.current_version.outputs.current_version }}"
           
           echo "Latest tag: $LATEST_TAG_CLEAN"
           echo "Current pubspec version: $CURRENT_VERSION"
@@ -58,9 +58,16 @@ jobs:
             echo "should_bump=true" >> $GITHUB_OUTPUT
             echo "new_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
           else
-            echo "Version unchanged, no tag needed"
-            echo "should_bump=false" >> $GITHUB_OUTPUT
-            echo "new_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+            # Create patch version for code changes without version bump
+            echo "Version unchanged, but creating patch tag for code changes"
+            echo "should_bump=true" >> $GITHUB_OUTPUT
+            
+            # Extract version parts
+            IFS='.' read -r major minor patch <<< "$CURRENT_VERSION"
+            NEW_PATCH=$((patch + 1))
+            NEW_VERSION="$major.$minor.$NEW_PATCH"
+            echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+            echo "Creating patch version: $NEW_VERSION"
           fi
         fi
     

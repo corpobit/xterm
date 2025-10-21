@@ -1,0 +1,107 @@
+name: Auto Version & Tag
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    types: [ closed ]
+    branches: [ main ]
+
+jobs:
+  version-and-tag:
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+      pull-requests: read
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Set up Git
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+    
+    - name: Get current version
+      id: current_version
+      run: |
+        CURRENT_VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //')
+        echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+        echo "Current version: $CURRENT_VERSION"
+    
+    - name: Check if version bump is needed
+      id: version_check
+      run: |
+        # Get the latest tag
+        LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+        
+        if [ -z "$LATEST_TAG" ]; then
+          echo "No previous tags found, will use current version"
+          echo "should_bump=false" >> $GITHUB_OUTPUT
+          echo "new_version=${{ steps.current_version.outputs.current_version }}" >> $GITHUB_OUTPUT
+        else
+          # Remove 'v' prefix if present
+          LATEST_TAG_CLEAN=${LATEST_TAG#v}
+          CURRENT_VERSION="${{ steps.current_version.outputs.current_version }}"
+          
+          echo "Latest tag: $LATEST_TAG_CLEAN"
+          echo "Current pubspec version: $CURRENT_VERSION"
+          
+          if [ "$LATEST_TAG_CLEAN" != "$CURRENT_VERSION" ]; then
+            echo "Version has changed, will create tag"
+            echo "should_bump=true" >> $GITHUB_OUTPUT
+            echo "new_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          else
+            echo "Version unchanged, no tag needed"
+            echo "should_bump=false" >> $GITHUB_OUTPUT
+            echo "new_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          fi
+        fi
+    
+    - name: Create and push tag
+      if: steps.version_check.outputs.should_bump == 'true'
+      run: |
+        NEW_VERSION="${{ steps.version_check.outputs.new_version }}"
+        TAG_NAME="v$NEW_VERSION"
+        
+        echo "Creating tag: $TAG_NAME"
+        
+        # Create the tag
+        git tag -a "$TAG_NAME" -m "Release version $NEW_VERSION"
+        
+        # Push the tag
+        git push origin "$TAG_NAME"
+        
+        echo "Tag $TAG_NAME created and pushed successfully"
+    
+    - name: Create GitHub Release
+      if: steps.version_check.outputs.should_bump == 'true'
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v${{ steps.version_check.outputs.new_version }}
+        release_name: Release v${{ steps.version_check.outputs.new_version }}
+        body: |
+          ## Changes in v${{ steps.version_check.outputs.new_version }}
+          
+          This release includes the latest changes from the main branch.
+          
+          ### Installation
+          ```yaml
+          dependencies:
+            xterm: ^${{ steps.version_check.outputs.new_version }}
+          ```
+          
+          ### Usage
+          ```dart
+          import 'package:xterm/xterm.dart';
+          ```
+        draft: false
+        prerelease: false

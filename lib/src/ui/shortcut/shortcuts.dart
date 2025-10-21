@@ -16,8 +16,7 @@ Map<ShortcutActivator, Intent> get defaultTerminalShortcuts {
 }
 
 final _defaultShortcuts = {
-  SingleActivator(LogicalKeyboardKey.keyC, control: true, shift: true):
-      CopySelectionTextIntent.copy,
+  // Note: Ctrl+C is intentionally excluded to allow terminal interrupt signal
   SingleActivator(LogicalKeyboardKey.keyV, control: true):
       const PasteTextIntent(SelectionChangedCause.keyboard),
   SingleActivator(LogicalKeyboardKey.keyA, control: true):
@@ -25,8 +24,7 @@ final _defaultShortcuts = {
 };
 
 final _defaultAppleShortcuts = {
-  SingleActivator(LogicalKeyboardKey.keyC, meta: true):
-      CopySelectionTextIntent.copy,
+  // Note: Cmd+C is intentionally excluded to allow terminal interrupt signal
   SingleActivator(LogicalKeyboardKey.keyV, meta: true):
       const PasteTextIntent(SelectionChangedCause.keyboard),
   SingleActivator(LogicalKeyboardKey.keyA, meta: true):

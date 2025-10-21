@@ -610,7 +610,7 @@ class TerminalViewState extends State<TerminalView>  with AutomaticKeepAliveClie
       }
     }
 
-    // Handle copy/paste shortcuts
+    // Handle copy/paste shortcuts (excluding Ctrl+C to allow terminal interrupt)
     if (event is KeyDownEvent) {
       final isCtrlPressed = HardwareKeyboard.instance.isControlPressed;
       final isMetaPressed = HardwareKeyboard.instance.isMetaPressed;
@@ -623,10 +623,7 @@ class TerminalViewState extends State<TerminalView>  with AutomaticKeepAliveClie
             _selectAllText();
             return KeyEventResult.handled;
             
-          case LogicalKeyboardKey.keyC:
-            // Copy selected text
-            _copySelectedText();
-            return KeyEventResult.handled;
+          // Note: Ctrl+C is intentionally excluded to allow terminal interrupt signal
             
           case LogicalKeyboardKey.keyV:
             // Paste from clipboard

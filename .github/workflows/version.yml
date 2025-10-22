@@ -42,6 +42,10 @@ jobs:
         ALL_TAGS=$(git tag -l "v*" | sort -V | tail -1)
         CURRENT_VERSION="${{ steps.current_version.outputs.current_version }}"
         
+        echo "All tags: $(git tag -l 'v*' | sort -V)"
+        echo "Highest tag: $ALL_TAGS"
+        echo "Current pubspec version: $CURRENT_VERSION"
+        
         if [ -z "$ALL_TAGS" ]; then
           echo "No previous tags found, will create first tag"
           echo "should_bump=true" >> $GITHUB_OUTPUT
@@ -51,26 +55,17 @@ jobs:
           LATEST_TAG_CLEAN=${ALL_TAGS#v}
           
           echo "Latest tag: $LATEST_TAG_CLEAN"
-          echo "Current pubspec version: $CURRENT_VERSION"
           
-          # Compare versions to determine if we need a new tag
-          if [ "$LATEST_TAG_CLEAN" != "$CURRENT_VERSION" ]; then
-            # pubspec.yaml version is different, use it
-            echo "Version has changed, will create tag"
-            echo "should_bump=true" >> $GITHUB_OUTPUT
-            echo "new_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
-          else
-            # Same version, create patch increment
-            echo "Version unchanged, creating patch increment"
-            echo "should_bump=true" >> $GITHUB_OUTPUT
-            
-            # Extract version parts from latest tag (not pubspec.yaml)
-            IFS='.' read -r major minor patch <<< "$LATEST_TAG_CLEAN"
-            NEW_PATCH=$((patch + 1))
-            NEW_VERSION="$major.$minor.$NEW_PATCH"
-            echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
-            echo "Creating patch version: $NEW_VERSION"
-          fi
+          # Always create a new patch version for code changes
+          echo "Creating patch increment from latest tag"
+          echo "should_bump=true" >> $GITHUB_OUTPUT
+          
+          # Extract version parts from latest tag
+          IFS='.' read -r major minor patch <<< "$LATEST_TAG_CLEAN"
+          NEW_PATCH=$((patch + 1))
+          NEW_VERSION="$major.$minor.$NEW_PATCH"
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "Creating patch version: $NEW_VERSION"
         fi
     
     - name: Create and push tag

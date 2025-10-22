@@ -68,6 +68,11 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
           textScaler: textScaler,
         );
 
+  // Minimap caching
+  Picture? _minimapCache;
+  int _lastMinimapLineCount = 0;
+  double _lastMinimapScrollOffset = 0.0;
+
   Terminal _terminal;
   set terminal(Terminal terminal) {
     if (_terminal == terminal) return;
@@ -621,260 +626,159 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
 
     // Draw minimap if enabled
     if (_showMinimap) {
-      _paintMinimap(canvas, offset);
+      _paintMinimapOptimized(canvas, offset);
     }
   }
 
-  /// Paints the minimap showing an overview of the terminal content
-  void _paintMinimap(Canvas canvas, Offset offset) {
+  /// Optimized minimap painting with caching
+  void _paintMinimapOptimized(Canvas canvas, Offset offset) {
     const double minimapWidth = 120.0;
     const double minimapHeight = 120.0;
     const double minimapPadding = 12.0;
     
     final minimapRect = Rect.fromLTWH(
       size.width - minimapWidth - minimapPadding,
-      minimapPadding, // Position at top-right
+      minimapPadding,
       minimapWidth,
       minimapHeight,
     );
     
-    // Draw minimap shadow
-    final shadowPaint = Paint()
-      ..color = Colors.black.withOpacity(0.3)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        minimapRect.translate(2, 2),
-        const Radius.circular(8),
-      ),
-      shadowPaint,
-    );
+    final lines = _terminal.buffer.lines;
+    final currentLineCount = lines.length;
+    final currentScrollOffset = _scrollOffset;
     
-    // Draw minimap background with gradient
-    final backgroundGradient = LinearGradient(
-      begin: Alignment.topLeft,
-      end: Alignment.bottomRight,
-      colors: [
-        _painter.theme.background.withOpacity(0.95),
-        _painter.theme.background.withOpacity(0.85),
-      ],
-    );
+    // Check if we need to regenerate the cache
+    final needsCacheUpdate = _minimapCache == null ||
+        _lastMinimapLineCount != currentLineCount ||
+        (_lastMinimapScrollOffset - currentScrollOffset).abs() > 10.0;
+    
+    if (needsCacheUpdate) {
+      _generateMinimapCache(minimapRect);
+      _lastMinimapLineCount = currentLineCount;
+      _lastMinimapScrollOffset = currentScrollOffset;
+    }
+    
+    // Draw cached minimap
+    if (_minimapCache != null) {
+      canvas.drawPicture(_minimapCache!);
+    }
+    
+    // Draw viewport indicator (this changes frequently, so draw it separately)
+    _drawViewportIndicator(canvas, minimapRect, offset);
+  }
+  
+  void _generateMinimapCache(Rect minimapRect) {
+    final recorder = PictureRecorder();
+    final canvas = Canvas(recorder);
+    
+    // Draw minimap background
     final backgroundPaint = Paint()
-      ..shader = backgroundGradient.createShader(minimapRect);
+      ..color = _painter.theme.background.withOpacity(0.9);
     canvas.drawRRect(
       RRect.fromRectAndRadius(minimapRect, const Radius.circular(8)),
       backgroundPaint,
     );
     
-    // Draw minimap border with gradient
-    final borderGradient = LinearGradient(
-      begin: Alignment.topLeft,
-      end: Alignment.bottomRight,
-      colors: [
-        _painter.theme.foreground.withOpacity(0.3),
-        _painter.theme.foreground.withOpacity(0.1),
-      ],
-    );
+    // Draw border
     final borderPaint = Paint()
-      ..shader = borderGradient.createShader(minimapRect)
+      ..color = _painter.theme.foreground.withOpacity(0.2)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
+      ..strokeWidth = 1.0;
     canvas.drawRRect(
       RRect.fromRectAndRadius(minimapRect, const Radius.circular(8)),
       borderPaint,
     );
     
-    // Draw inner glow effect
-    final glowPaint = Paint()
-      ..color = _painter.theme.foreground.withOpacity(0.05)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        minimapRect.deflate(1),
-        const Radius.circular(7),
-      ),
-      glowPaint,
-    );
-    
     final lines = _terminal.buffer.lines;
-    if (lines.length == 0) return;
+    if (lines.length == 0) {
+      _minimapCache = recorder.endRecording();
+      return;
+    }
     
-    // Calculate scaling factors
+    // Calculate scaling
     final contentHeight = lines.length * _painter.cellSize.height;
-    final minimapContentHeight = minimapRect.height - 8; // Account for inner padding
+    final minimapContentHeight = minimapRect.height - 8;
     final scaleY = minimapContentHeight / contentHeight;
     
     final contentWidth = _terminal.viewWidth * _painter.cellSize.width;
-    final minimapContentWidth = minimapRect.width - 8; // Account for inner padding
+    final minimapContentWidth = minimapRect.width - 8;
     final scaleX = minimapContentWidth / contentWidth;
     
-    // Draw minimap content
-    final minimapOffset = offset.translate(
+    final minimapOffset = Offset(
       minimapRect.left + 4,
       minimapRect.top + 4,
     );
     
-    for (var i = 0; i < lines.length; i++) {
+    // OPTIMIZED: Use aggressive sampling for performance
+    final lineSampleRate = (lines.length / minimapContentHeight * scaleY).ceil().clamp(2, 20);
+    final columnSampleRate = (_terminal.viewWidth / minimapContentWidth * scaleX).ceil().clamp(2, 10);
+    
+    for (var i = 0; i < lines.length; i += lineSampleRate) {
       final line = lines[i];
       final y = i * _painter.cellSize.height * scaleY;
       
-      // Draw line content (simplified - just show colored blocks for non-empty cells)
-      for (var j = 0; j < line.length && j < _terminal.viewWidth; j++) {
+      for (var j = 0; j < line.length && j < _terminal.viewWidth; j += columnSampleRate) {
         final cellData = CellData.empty();
         line.getCellData(j, cellData);
         
         final charCode = cellData.content & CellContent.codepointMask;
         if (charCode != 0) {
           final foreground = _painter.resolveForegroundColor(cellData.foreground);
-          final background = _painter.resolveBackgroundColor(cellData.background);
           
-          // Create a subtle gradient for each cell
+          // Simplified rendering - just colored dots
           final cellRect = Rect.fromLTWH(
             minimapOffset.dx + j * _painter.cellSize.width * scaleX,
             minimapOffset.dy + y,
-            _painter.cellSize.width * scaleX,
-            _painter.cellSize.height * scaleY,
+            (_painter.cellSize.width * scaleX).clamp(0.5, 2.0),
+            (_painter.cellSize.height * scaleY).clamp(0.5, 2.0),
           );
           
-          // Draw cell background
           final cellPaint = Paint()
-            ..color = background.withOpacity(0.3)
-            ..style = PaintingStyle.fill;
+            ..color = foreground.withOpacity(0.6);
           canvas.drawRect(cellRect, cellPaint);
-          
-          // Draw cell foreground with enhanced opacity
-          final foregroundPaint = Paint()
-            ..color = foreground.withOpacity(0.8)
-            ..style = PaintingStyle.fill;
-          canvas.drawRect(cellRect, foregroundPaint);
         }
       }
     }
     
-    // Draw viewport indicator with enhanced styling
+    _minimapCache = recorder.endRecording();
+  }
+  
+  void _drawViewportIndicator(Canvas canvas, Rect minimapRect, Offset offset) {
+    final lines = _terminal.buffer.lines;
+    if (lines.length == 0) return;
+    
+    final contentHeight = lines.length * _painter.cellSize.height;
+    final minimapContentHeight = minimapRect.height - 8;
+    final scaleY = minimapContentHeight / contentHeight;
+    
     final viewportTop = _scrollOffset * scaleY;
     final viewportHeight = _viewportHeight * scaleY;
     
-    // Draw viewport background with gradient
     final viewportRect = Rect.fromLTWH(
-      minimapOffset.dx,
-      minimapOffset.dy + viewportTop,
-      minimapContentWidth,
-      viewportHeight,
+      minimapRect.left + 4,
+      minimapRect.top + 4 + viewportTop,
+      minimapRect.width - 8,
+      viewportHeight.clamp(2.0, minimapRect.height - 8),
     );
     
-    final viewportGradient = LinearGradient(
-      begin: Alignment.topCenter,
-      end: Alignment.bottomCenter,
-      colors: [
-        _painter.theme.foreground.withOpacity(0.2),
-        _painter.theme.foreground.withOpacity(0.1),
-      ],
-    );
     final viewportPaint = Paint()
-      ..shader = viewportGradient.createShader(viewportRect);
+      ..color = _painter.theme.cursor.withOpacity(0.3)
+      ..style = PaintingStyle.fill;
     canvas.drawRRect(
       RRect.fromRectAndRadius(viewportRect, const Radius.circular(2)),
       viewportPaint,
     );
     
-    // Draw viewport border with enhanced styling
-    final viewportBorderGradient = LinearGradient(
-      begin: Alignment.topLeft,
-      end: Alignment.bottomRight,
-      colors: [
-        _painter.theme.foreground.withOpacity(0.8),
-        _painter.theme.foreground.withOpacity(0.4),
-      ],
-    );
-    final viewportBorderPaint = Paint()
-      ..shader = viewportBorderGradient.createShader(viewportRect)
+    final borderPaint = Paint()
+      ..color = _painter.theme.cursor.withOpacity(0.8)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
-    
+      ..strokeWidth = 1.0;
     canvas.drawRRect(
       RRect.fromRectAndRadius(viewportRect, const Radius.circular(2)),
-      viewportBorderPaint,
+      borderPaint,
     );
-    
-    // Draw viewport corner indicators
-    final cornerSize = 4.0;
-    final cornerPaint = Paint()
-      ..color = _painter.theme.foreground.withOpacity(0.9)
-      ..style = PaintingStyle.fill;
-    
-    // Top-left corner
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(viewportRect.left, viewportRect.top, cornerSize, cornerSize),
-        const Radius.circular(1),
-      ),
-      cornerPaint,
-    );
-    
-    // Top-right corner
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(viewportRect.right - cornerSize, viewportRect.top, cornerSize, cornerSize),
-        const Radius.circular(1),
-      ),
-      cornerPaint,
-    );
-    
-    // Bottom-left corner
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(viewportRect.left, viewportRect.bottom - cornerSize, cornerSize, cornerSize),
-        const Radius.circular(1),
-      ),
-      cornerPaint,
-    );
-    
-    // Bottom-right corner
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(viewportRect.right - cornerSize, viewportRect.bottom - cornerSize, cornerSize, cornerSize),
-        const Radius.circular(1),
-      ),
-      cornerPaint,
-    );
-    
-    // Draw bookmark indicators in minimap
-    if (_showLineNumbers && _bookmarks.isNotEmpty) {
-      for (final bookmarkLine in _bookmarks) {
-        final bookmarkY = (bookmarkLine - 1) * _painter.cellSize.height * scaleY;
-        
-        // Draw bookmark indicator (small colored dot)
-        final bookmarkRect = Rect.fromLTWH(
-          minimapOffset.dx + minimapContentWidth - 8, // Right side of minimap
-          minimapOffset.dy + bookmarkY + 2, // Slightly offset from line center
-          4,
-          4,
-        );
-        
-        final bookmarkPaint = Paint()
-          ..color = _painter.theme.foreground.withOpacity(0.9)
-          ..style = PaintingStyle.fill;
-        
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(bookmarkRect, const Radius.circular(2)),
-          bookmarkPaint,
-        );
-        
-        // Add a subtle glow effect
-        final glowPaint = Paint()
-          ..color = _painter.theme.foreground.withOpacity(0.3)
-          ..style = PaintingStyle.fill;
-        
-        final glowRect = bookmarkRect.inflate(1);
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(glowRect, const Radius.circular(3)),
-          glowPaint,
-        );
-      }
-    }
   }
+
 
   /// Paints the text that is currently being composed in IME to [canvas] at
   /// [offset]. [offset] is usually the cursor position.

@@ -459,6 +459,11 @@ class TerminalViewState extends State<TerminalView>  with AutomaticKeepAliveClie
              });
            }
          }
+         
+         // Handle minimap hover for scroll navigation
+         if (widget.showMinimap) {
+           renderTerminal.handleMinimapInteraction(event.localPosition);
+         }
         } catch (e) {
           // Ignore errors
         }
@@ -469,6 +474,7 @@ class TerminalViewState extends State<TerminalView>  with AutomaticKeepAliveClie
             _hoveredLineNumber = null;
           });
         }
+        
       },
       cursor: _currentCursor,
       child: child,

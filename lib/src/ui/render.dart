@@ -635,16 +635,8 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   /// Optimized minimap painting with caching
   void _paintMinimapOptimized(Canvas canvas, Offset offset) {
     const double minimapWidth = 120.0;
+    const double minimapHeight = 120.0;
     const double minimapPadding = 12.0;
-    
-    // Calculate dynamic height based on terminal content
-    final lines = _terminal.buffer.lines;
-    final contentHeight = lines.length * _painter.cellSize.height;
-    final terminalHeight = size.height;
-    
-    // Start with original square size (120px) and grow up to center of terminal
-    final maxHeight = terminalHeight * 0.5; // Center of terminal
-    final minimapHeight = (contentHeight * 0.3).clamp(120.0, maxHeight);
     
     final minimapRect = Rect.fromLTWH(
       size.width - minimapWidth - minimapPadding,
@@ -653,6 +645,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
       minimapHeight,
     );
     
+    final lines = _terminal.buffer.lines;
     final currentLineCount = lines.length;
     final currentScrollOffset = _scrollOffset;
     
@@ -892,16 +885,8 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     if (!_showMinimap) return null;
     
     const double minimapWidth = 120.0;
+    const double minimapHeight = 120.0;
     const double minimapPadding = 12.0;
-    
-    // Calculate dynamic height based on terminal content
-    final lines = _terminal.buffer.lines;
-    final contentHeight = lines.length * _painter.cellSize.height;
-    final terminalHeight = size.height;
-    
-    // Start with original square size (120px) and grow up to center of terminal
-    final maxHeight = terminalHeight * 0.5; // Center of terminal
-    final minimapHeight = (contentHeight * 0.3).clamp(120.0, maxHeight);
     
     return Rect.fromLTWH(
       size.width - minimapWidth - minimapPadding,
@@ -920,7 +905,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     
     const double minimapPadding = 12.0;
     final relativeY = position.dy - minimapPadding;
-    final minimapHeight = minimapRect.height; // Use the dynamic height
+    final minimapHeight = 120.0; // This is now a fixed height, so no need to calculate it from size.height
     
     // Calculate the target scroll position
     final lines = _terminal.buffer.lines;

@@ -186,7 +186,8 @@ class TerminalView extends StatefulWidget {
   State<TerminalView> createState() => TerminalViewState();
 }
 
-class TerminalViewState extends State<TerminalView>  with AutomaticKeepAliveClientMixin{
+class TerminalViewState extends State<TerminalView>
+    with AutomaticKeepAliveClientMixin {
   late FocusNode _focusNode;
 
   late final ShortcutManager _shortcutManager;
@@ -208,24 +209,26 @@ class TerminalViewState extends State<TerminalView>  with AutomaticKeepAliveClie
   MouseCursor _currentCursor = SystemMouseCursors.text;
   int? _hoveredLineNumber;
 
-  RenderTerminal get renderTerminal => _viewportKey.currentContext!.findRenderObject() as RenderTerminal;
+  RenderTerminal get renderTerminal =>
+      _viewportKey.currentContext!.findRenderObject() as RenderTerminal;
 
   /// Scroll to a specific line number
   void scrollToLine(int lineNumber) {
     if (lineNumber < 0) return;
-    
+
     // Calculate the pixel offset for the line
     final lineHeight = renderTerminal.lineHeight;
     final targetOffset = lineNumber * lineHeight;
-    
+
     // Get the viewport height to calculate center position
     final viewportHeight = _scrollController.position.viewportDimension;
     final linesInViewport = viewportHeight / lineHeight;
-    
+
     // Position the line in the middle of the viewport (with some padding)
     final centerOffset = (linesInViewport / 2) * lineHeight;
-    final adjustedOffset = (targetOffset - centerOffset).clamp(0.0, _scrollController.position.maxScrollExtent);
-    
+    final adjustedOffset = (targetOffset - centerOffset)
+        .clamp(0.0, _scrollController.position.maxScrollExtent);
+
     // Scroll to the target line
     _scrollController.animateTo(
       adjustedOffset,
@@ -239,15 +242,16 @@ class TerminalViewState extends State<TerminalView>  with AutomaticKeepAliveClie
     // Calculate the pixel offset for the match
     final lineHeight = renderTerminal.lineHeight;
     final targetOffset = matchOffset.y * lineHeight;
-    
+
     // Get the viewport height to calculate center position
     final viewportHeight = _scrollController.position.viewportDimension;
     final linesInViewport = viewportHeight / lineHeight;
-    
+
     // Position the match in the middle of the viewport (with some padding)
     final centerOffset = (linesInViewport / 2) * lineHeight;
-    final adjustedOffset = (targetOffset - centerOffset).clamp(0.0, _scrollController.position.maxScrollExtent);
-    
+    final adjustedOffset = (targetOffset - centerOffset)
+        .clamp(0.0, _scrollController.position.maxScrollExtent);
+
     // Scroll to the target match
     _scrollController.animateTo(
       adjustedOffset,
@@ -373,7 +377,8 @@ class TerminalViewState extends State<TerminalView>  with AutomaticKeepAliveClie
         onAction: (action) {
           _scrollToBottom();
           // Android sends TextInputAction.newline when the user presses the virtual keyboard's enter key.
-          if (action == TextInputAction.done || action == TextInputAction.newline) {
+          if (action == TextInputAction.done ||
+              action == TextInputAction.newline) {
             widget.terminal.keyInput(TerminalKey.enter);
           }
         },
@@ -410,8 +415,10 @@ class TerminalViewState extends State<TerminalView>  with AutomaticKeepAliveClie
       terminalController: _controller,
       onTapUp: _onTapUp,
       onTapDown: _onTapDown,
-      onSecondaryTapDown: widget.onSecondaryTapDown != null ? _onSecondaryTapDown : null,
-      onSecondaryTapUp: widget.onSecondaryTapUp != null ? _onSecondaryTapUp : null,
+      onSecondaryTapDown:
+          widget.onSecondaryTapDown != null ? _onSecondaryTapDown : null,
+      onSecondaryTapUp:
+          widget.onSecondaryTapUp != null ? _onSecondaryTapUp : null,
       readOnly: widget.readOnly,
       child: child,
     );
@@ -437,33 +444,35 @@ class TerminalViewState extends State<TerminalView>  with AutomaticKeepAliveClie
         child: child,
       );
     }
-    
+
     // Add mouse region for cursor change
     child = MouseRegion(
       onHover: (event) {
         try {
           final renderTerminal = this.renderTerminal;
-          final cursor = renderTerminal.getCursorForPosition(event.localPosition);
+          final cursor =
+              renderTerminal.getCursorForPosition(event.localPosition);
           if (_currentCursor != cursor) {
             setState(() {
               _currentCursor = cursor;
             });
           }
-         
-         // Track line number hover
-         if (widget.showLineNumbers) {
-           final hoveredLine = renderTerminal.getHoveredLineNumber(event.localPosition);
-           if (_hoveredLineNumber != hoveredLine) {
-             setState(() {
-               _hoveredLineNumber = hoveredLine;
-             });
-           }
-         }
-         
-         // Handle minimap hover for scroll navigation
-         if (widget.showMinimap) {
-           renderTerminal.handleMinimapInteraction(event.localPosition);
-         }
+
+          // Track line number hover
+          if (widget.showLineNumbers) {
+            final hoveredLine =
+                renderTerminal.getHoveredLineNumber(event.localPosition);
+            if (_hoveredLineNumber != hoveredLine) {
+              setState(() {
+                _hoveredLineNumber = hoveredLine;
+              });
+            }
+          }
+
+          // Handle minimap hover for scroll navigation
+          if (widget.showMinimap) {
+            renderTerminal.handleMinimapInteraction(event.localPosition);
+          }
         } catch (e) {
           // Ignore errors
         }
@@ -474,7 +483,6 @@ class TerminalViewState extends State<TerminalView>  with AutomaticKeepAliveClie
             _hoveredLineNumber = null;
           });
         }
-        
       },
       cursor: _currentCursor,
       child: child,
@@ -520,7 +528,8 @@ class TerminalViewState extends State<TerminalView>  with AutomaticKeepAliveClie
   }
 
   Rect get globalCursorRect {
-    return renderTerminal.localToGlobal(renderTerminal.cursorOffset) & renderTerminal.cellSize;
+    return renderTerminal.localToGlobal(renderTerminal.cursorOffset) &
+        renderTerminal.cellSize;
   }
 
   void _onTapUp(TapUpDetails details) {
@@ -551,19 +560,23 @@ class TerminalViewState extends State<TerminalView>  with AutomaticKeepAliveClie
   }
 
   void _onMinimapTap(TapDownDetails details) {
-    renderTerminal.handleMinimapInteraction(details.localPosition, isDragging: false);
+    renderTerminal.handleMinimapInteraction(details.localPosition,
+        isDragging: false);
   }
 
   void _onMinimapPanStart(DragStartDetails details) {
-    renderTerminal.handleMinimapInteraction(details.localPosition, isDragging: true);
+    renderTerminal.handleMinimapInteraction(details.localPosition,
+        isDragging: true);
   }
 
   void _onMinimapDrag(DragUpdateDetails details) {
-    renderTerminal.handleMinimapInteraction(details.localPosition, isDragging: true);
+    renderTerminal.handleMinimapInteraction(details.localPosition,
+        isDragging: true);
   }
 
   void _onMinimapPanEnd(DragEndDetails details) {
-    renderTerminal.handleMinimapInteraction(details.localPosition, isDragging: false);
+    renderTerminal.handleMinimapInteraction(details.localPosition,
+        isDragging: false);
   }
 
   void _onLineNumberTap(TapDownDetails details) {
@@ -605,11 +618,11 @@ class TerminalViewState extends State<TerminalView>  with AutomaticKeepAliveClie
 
     // Handle find shortcuts
     if (event is KeyDownEvent) {
-      final isFindShortcut = (HardwareKeyboard.instance.isControlPressed && 
-                             event.logicalKey == LogicalKeyboardKey.keyF) ||
-                            (HardwareKeyboard.instance.isMetaPressed && 
-                             event.logicalKey == LogicalKeyboardKey.keyF);
-      
+      final isFindShortcut = (HardwareKeyboard.instance.isControlPressed &&
+              event.logicalKey == LogicalKeyboardKey.keyF) ||
+          (HardwareKeyboard.instance.isMetaPressed &&
+              event.logicalKey == LogicalKeyboardKey.keyF);
+
       if (isFindShortcut) {
         _findController.toggle();
         return KeyEventResult.handled;
@@ -621,22 +634,21 @@ class TerminalViewState extends State<TerminalView>  with AutomaticKeepAliveClie
       final isCtrlPressed = HardwareKeyboard.instance.isControlPressed;
       final isMetaPressed = HardwareKeyboard.instance.isMetaPressed;
       final isModifierPressed = isCtrlPressed || isMetaPressed;
-      
+
       if (isModifierPressed) {
         switch (event.logicalKey) {
           case LogicalKeyboardKey.keyA:
             // Select all text
             _selectAllText();
             return KeyEventResult.handled;
-            
+
           // Note: Ctrl+C is intentionally excluded to allow terminal interrupt signal
-            
+
           case LogicalKeyboardKey.keyV:
             // Paste from clipboard
             _pasteFromClipboard();
             return KeyEventResult.handled;
-            
-            
+
           default:
             break;
         }
@@ -663,6 +675,15 @@ class TerminalViewState extends State<TerminalView>  with AutomaticKeepAliveClie
       return KeyEventResult.ignored;
     }
 
+    if (event is KeyDownEvent &&
+        HardwareKeyboard.instance.isAltPressed &&
+        (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
+            event.logicalKey == LogicalKeyboardKey.arrowRight)) {
+      final isRight = event.logicalKey == LogicalKeyboardKey.arrowRight;
+      _moveCursorByWord(isRight);
+      return KeyEventResult.handled;
+    }
+
     final handled = widget.terminal.keyInput(
       key,
       ctrl: HardwareKeyboard.instance.isControlPressed,
@@ -675,6 +696,30 @@ class TerminalViewState extends State<TerminalView>  with AutomaticKeepAliveClie
     }
 
     return handled ? KeyEventResult.handled : KeyEventResult.ignored;
+  }
+
+  void _moveCursorByWord(bool isRight) {
+    final buffer = widget.terminal.buffer;
+    final line = buffer.lines[buffer.cursorY].toString();
+    if (line.isEmpty) return;
+
+    int newX = buffer.cursorX;
+
+    if (isRight) {
+      final match = RegExp(r'\w+|\s+')
+          .allMatches(line.substring(buffer.cursorX))
+          .toList();
+      if (match.isNotEmpty) newX = buffer.cursorX + match.first.end;
+    } else {
+      final match =
+          RegExp(r'(\w+|\s+)$').firstMatch(line.substring(0, buffer.cursorX));
+      if (match != null) newX = match.start;
+    }
+
+    buffer.setCursorX(newX.clamp(0, line.length));
+
+    // Trigger a UI update in the TerminalView
+    widget.terminal.notifyListeners();
   }
 
   void _onKeyboardShow() {
@@ -705,7 +750,7 @@ class TerminalViewState extends State<TerminalView>  with AutomaticKeepAliveClie
   void _selectAllText() {
     final buffer = widget.terminal.buffer;
     if (buffer.lines.length == 0) return;
-    
+
     _controller.setSelection(
       buffer.createAnchor(0, buffer.height - buffer.viewHeight),
       buffer.createAnchor(buffer.viewWidth, buffer.height - 1),
@@ -717,7 +762,7 @@ class TerminalViewState extends State<TerminalView>  with AutomaticKeepAliveClie
   void _copySelectedText() {
     final selection = _controller.selection;
     if (selection == null) return;
-    
+
     final selectedText = widget.terminal.buffer.getText(selection);
     if (selectedText.isNotEmpty) {
       Clipboard.setData(ClipboardData(text: selectedText));
@@ -735,10 +780,8 @@ class TerminalViewState extends State<TerminalView>  with AutomaticKeepAliveClie
     }
   }
 
-  
   @override
   bool get wantKeepAlive => true;
-  
 }
 
 class _TerminalView extends LeafRenderObjectWidget {

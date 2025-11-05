@@ -611,77 +611,56 @@ class TerminalViewState extends State<TerminalView>
   }
 
   KeyEventResult _handleKeyEvent(FocusNode focusNode, KeyEvent event) {
+    // 1. External override
     final resultOverride = widget.onKeyEvent?.call(focusNode, event);
     if (resultOverride != null && resultOverride != KeyEventResult.ignored) {
       return resultOverride;
     }
 
-    // Handle find shortcuts
+    // 2. Find: Ctrl/Cmd + F
     if (event is KeyDownEvent) {
-      final isFindShortcut = (HardwareKeyboard.instance.isControlPressed &&
-              event.logicalKey == LogicalKeyboardKey.keyF) ||
-          (HardwareKeyboard.instance.isMetaPressed &&
-              event.logicalKey == LogicalKeyboardKey.keyF);
-
-      if (isFindShortcut) {
+      final isFind = (HardwareKeyboard.instance.isControlPressed ||
+              HardwareKeyboard.instance.isMetaPressed) &&
+          event.logicalKey == LogicalKeyboardKey.keyF;
+      if (isFind) {
         _findController.toggle();
         return KeyEventResult.handled;
       }
     }
 
-    // Handle copy/paste shortcuts (excluding Ctrl+C to allow terminal interrupt)
+    // 3. Copy/Paste: Ctrl/Cmd + A, V
     if (event is KeyDownEvent) {
-      final isCtrlPressed = HardwareKeyboard.instance.isControlPressed;
-      final isMetaPressed = HardwareKeyboard.instance.isMetaPressed;
-      final isModifierPressed = isCtrlPressed || isMetaPressed;
-
-      if (isModifierPressed) {
+      final isMod = HardwareKeyboard.instance.isControlPressed ||
+          HardwareKeyboard.instance.isMetaPressed;
+      if (isMod) {
         switch (event.logicalKey) {
           case LogicalKeyboardKey.keyA:
-            // Select all text
             _selectAllText();
             return KeyEventResult.handled;
-
-          // Note: Ctrl+C is intentionally excluded to allow terminal interrupt signal
-
           case LogicalKeyboardKey.keyV:
-            // Paste from clipboard
             _pasteFromClipboard();
             return KeyEventResult.handled;
-
-          default:
-            break;
         }
       }
     }
 
-    // ignore: invalid_use_of_protected_member
-    final shortcutResult = _shortcutManager.handleKeypress(
-      focusNode.context!,
-      event,
-    );
-
+    // 4. Built-in shortcuts
+    final shortcutResult =
+        _shortcutManager.handleKeypress(focusNode.context!, event);
     if (shortcutResult != KeyEventResult.ignored) {
       return shortcutResult;
     }
 
+    // 5. Ignore KeyUp early
     if (event is KeyUpEvent) {
       return KeyEventResult.ignored;
     }
 
-    final key = keyToTerminalKey(event.logicalKey);
 
+    // 7. ALL OTHER KEYS
+    final key = keyToTerminalKey(event.logicalKey);
     if (key == null) {
       return KeyEventResult.ignored;
-    }
-
-    if (event is KeyDownEvent &&
-        HardwareKeyboard.instance.isAltPressed &&
-        (event.logicalKey == LogicalKeyboardKey.arrowLeft ||
-            event.logicalKey == LogicalKeyboardKey.arrowRight)) {
-      final isRight = event.logicalKey == LogicalKeyboardKey.arrowRight;
-      _moveCursorByWord(isRight);
-      return KeyEventResult.handled;
     }
 
     final handled = widget.terminal.keyInput(
@@ -698,29 +677,7 @@ class TerminalViewState extends State<TerminalView>
     return handled ? KeyEventResult.handled : KeyEventResult.ignored;
   }
 
-  void _moveCursorByWord(bool isRight) {
-    final buffer = widget.terminal.buffer;
-    final line = buffer.lines[buffer.cursorY].toString();
-    if (line.isEmpty) return;
 
-    int newX = buffer.cursorX;
-
-    if (isRight) {
-      final match = RegExp(r'\w+|\s+')
-          .allMatches(line.substring(buffer.cursorX))
-          .toList();
-      if (match.isNotEmpty) newX = buffer.cursorX + match.first.end;
-    } else {
-      final match =
-          RegExp(r'(\w+|\s+)$').firstMatch(line.substring(0, buffer.cursorX));
-      if (match != null) newX = match.start;
-    }
-
-    buffer.setCursorX(newX.clamp(0, line.length));
-
-    // Trigger a UI update in the TerminalView
-    widget.terminal.notifyListeners();
-  }
 
   void _onKeyboardShow() {
     if (_focusNode.hasFocus) {

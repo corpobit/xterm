@@ -66,13 +66,27 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
           theme: theme,
           textStyle: textStyle,
           textScaler: textScaler,
-        );
+        ) {
+_terminal.addListener(() {
+  _terminalRevision++;
+  markNeedsPaint();
+});
+
+  }
+
+//   @override
+// void dispose() {
+//   _terminal.onOutput = null;
+//   super.dispose();
+// }
 
   // Minimap caching
   Picture? _minimapCache;
   int _lastMinimapLineCount = 0;
   double _lastMinimapScrollOffset = 0.0;
   Rect? _lastMinimapRect;
+  int _terminalRevision = 0;
+  int _lastRevision = 0;
 
   Terminal _terminal;
   set terminal(Terminal terminal) {
@@ -664,13 +678,15 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     final needsCacheUpdate = _minimapCache == null ||
         _lastMinimapLineCount != currentLineCount ||
         (_lastMinimapScrollOffset - currentScrollOffset).abs() > 10.0 ||
-        _lastMinimapRect != minimapRect;
+        _lastMinimapRect != minimapRect ||
+        _lastRevision != _terminalRevision;
 
     if (needsCacheUpdate) {
       _generateMinimapCache(minimapRect);
       _lastMinimapLineCount = currentLineCount;
       _lastMinimapScrollOffset = currentScrollOffset;
       _lastMinimapRect = minimapRect;
+      // _lastRevision = _terminalRevision;
     }
 
     // Draw cached minimap

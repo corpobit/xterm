@@ -260,12 +260,13 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
 
     return false;
   }
+  
 
   /// Similary to [keyInput], but takes a character as input instead of a
   /// [TerminalKey].
   ///
   /// See also:
-  /// - [keyInput]
+  // / - [keyInput]
   /// - [textInput]
   /// - [paste]
   bool charInput(
@@ -351,30 +352,44 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
   /// the future.
   @override
   void resize(
-    int newWidth,
-    int newHeight, [
-    int? pixelWidth,
-    int? pixelHeight,
-  ]) {
-    newWidth = max(newWidth, 1);
-    newHeight = max(newHeight, 1);
+  int newWidth,
+  int newHeight, [
+  int? pixelWidth,
+  int? pixelHeight,
+]) {
+  newWidth = max(newWidth, 1);
+  newHeight = max(newHeight, 1);
 
-    onResize?.call(newWidth, newHeight, pixelWidth ?? 0, pixelHeight ?? 0);
+if (newWidth < _viewWidth) {
+  // Skip shrinking to prevent line wrap artifacts
+  return;
+}
 
-    //we need to resize both buffers so that they are ready when we switch between them
-    _altBuffer.resize(_viewWidth, _viewHeight, newWidth, newHeight);
-    _mainBuffer.resize(_viewWidth, _viewHeight, newWidth, newHeight);
 
-    _viewWidth = newWidth;
-    _viewHeight = newHeight;
+  // 1️⃣ Update internal dimensions first
+  final oldWidth = _viewWidth;
+  final oldHeight = _viewHeight;
 
-    if (buffer == _altBuffer) {
-      buffer.clearScrollback();
-    }
+  _viewWidth = newWidth;
+  _viewHeight = newHeight;
 
-    _altBuffer.resetVerticalMargins();
-    _mainBuffer.resetVerticalMargins();
+  // 2️⃣ Notify listeners
+  onResize?.call(newWidth, newHeight, pixelWidth ?? 0, pixelHeight ?? 0);
+
+  // 3️⃣ Resize both buffers with *old → new* transition
+  _altBuffer.resize(oldWidth, oldHeight, newWidth, newHeight);
+  _mainBuffer.resize(oldWidth, oldHeight, newWidth, newHeight);
+
+  // 4️⃣ Clear alt buffer scrollback if active
+  if (buffer == _altBuffer) {
+    buffer.clearScrollback();
   }
+
+  // 5️⃣ Reset margins
+  _altBuffer.resetVerticalMargins();
+  _mainBuffer.resetVerticalMargins();
+}
+
 
   @override
   String toString() {

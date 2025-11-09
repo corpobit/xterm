@@ -260,7 +260,6 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
 
     return false;
   }
-  
 
   /// Similary to [keyInput], but takes a character as input instead of a
   /// [TerminalKey].
@@ -352,44 +351,42 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
   /// the future.
   @override
   void resize(
-  int newWidth,
-  int newHeight, [
-  int? pixelWidth,
-  int? pixelHeight,
-]) {
-  newWidth = max(newWidth, 1);
-  newHeight = max(newHeight, 1);
+    int newWidth,
+    int newHeight, [
+    int? pixelWidth,
+    int? pixelHeight,
+  ]) {
+    newWidth = max(newWidth, 1);
+    newHeight = max(newHeight, 1);
 
-if (newWidth < _viewWidth) {
-  // Skip shrinking to prevent line wrap artifacts
-  return;
-}
+    if (newWidth < _viewWidth) {
+      // Skip shrinking to prevent line wrap artifacts
+      return;
+    }
 
+    //  Update internal dimensions first
+    final oldWidth = _viewWidth;
+    final oldHeight = _viewHeight;
 
-  // 1️⃣ Update internal dimensions first
-  final oldWidth = _viewWidth;
-  final oldHeight = _viewHeight;
+    _viewWidth = newWidth;
+    _viewHeight = newHeight;
 
-  _viewWidth = newWidth;
-  _viewHeight = newHeight;
+    //  Notify listeners
+    onResize?.call(newWidth, newHeight, pixelWidth ?? 0, pixelHeight ?? 0);
 
-  // 2️⃣ Notify listeners
-  onResize?.call(newWidth, newHeight, pixelWidth ?? 0, pixelHeight ?? 0);
+    //  Resize both buffers with *old → new* transition
+    _altBuffer.resize(oldWidth, oldHeight, newWidth, newHeight);
+    _mainBuffer.resize(oldWidth, oldHeight, newWidth, newHeight);
 
-  // 3️⃣ Resize both buffers with *old → new* transition
-  _altBuffer.resize(oldWidth, oldHeight, newWidth, newHeight);
-  _mainBuffer.resize(oldWidth, oldHeight, newWidth, newHeight);
+    // Clear alt buffer scrollback if active
+    if (buffer == _altBuffer) {
+      buffer.clearScrollback();
+    }
 
-  // 4️⃣ Clear alt buffer scrollback if active
-  if (buffer == _altBuffer) {
-    buffer.clearScrollback();
+    //  Reset margins
+    _altBuffer.resetVerticalMargins();
+    _mainBuffer.resetVerticalMargins();
   }
-
-  // 5️⃣ Reset margins
-  _altBuffer.resetVerticalMargins();
-  _mainBuffer.resetVerticalMargins();
-}
-
 
   @override
   String toString() {

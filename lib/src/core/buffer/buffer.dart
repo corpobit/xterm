@@ -284,48 +284,13 @@ class Buffer {
     _cursorX = min(_cursorX + 1, viewWidth);
   }
 
-  // void setCursorX(int cursorX) {
-  //   _cursorX = cursorX.clamp(0, viewWidth - 1);
-  // }
-
-  // void setCursorY(int cursorY) {
-  //   _cursorY = cursorY.clamp(0, viewHeight - 1);
-  // }
-
-  // void moveCursorX(int offset) {
-  //   setCursorX(_cursorX + offset);
-  // }
-
-  // void moveCursorY(int offset) {
-  //   setCursorY(_cursorY + offset);
-  // }
-
-  // -----------------------------------------------------------------
-  // 1. Helper: Get editable area after "✗ "
-  // -----------------------------------------------------------------
-  (int, String) _getEditableArea(String line) {
-    const marker = '✗ ';
-    final i = line.indexOf(marker);
-    if (i == -1) return (0, line);
-    final start = i + marker.length;
-    return (start, line.substring(start));
+  void setCursorX(int cursorX) {
+    _cursorX = cursorX.clamp(0, viewWidth - 1);
   }
-
-  // -----------------------------------------------------------------
-  // 2. setCursorX – CLAMPS TO EDITABLE AREA
-  // -----------------------------------------------------------------
-void setCursorX(int x) {
-  final line = lines[absoluteCursorY].toString();
-  final (editableStart, _) = _getEditableArea(line);
-  final editableEnd = line.length;
-  _cursorX = x.clamp(editableStart, editableEnd);
-}
-
 
   void setCursorY(int cursorY) {
     _cursorY = cursorY.clamp(0, viewHeight - 1);
   }
-
 
   void moveCursorX(int offset) {
     setCursorX(_cursorX + offset);
@@ -333,12 +298,7 @@ void setCursorX(int x) {
 
   void moveCursorY(int offset) {
     setCursorY(_cursorY + offset);
-    // Optional: clamp X to new line's editable area
-    setCursorX(_cursorX);
   }
-
-
-
 
   void setCursor(int cursorX, int cursorY) {
     var maxCursorY = viewHeight - 1;
@@ -348,9 +308,8 @@ void setCursorX(int x) {
       maxCursorY = _marginBottom;
     }
 
+    _cursorX = cursorX.clamp(0, viewWidth - 1);
     _cursorY = cursorY.clamp(0, maxCursorY);
-    // Use setCursorX to ensure clamping to editable area
-    setCursorX(cursorX);
   }
 
   void moveCursor(int offsetX, int offsetY) {

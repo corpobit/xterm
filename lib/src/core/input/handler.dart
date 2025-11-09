@@ -183,35 +183,6 @@ class CtrlInputHandler implements TerminalInputHandler {
 
 /// A [TerminalInputHandler] that translates alt + key events into escape
 /// sequences. For example, alt + a becomes ^[a.
-// class AltInputHandler implements TerminalInputHandler {
-//   const AltInputHandler();
-
-//   @override
-//   String? call(TerminalKeyboardEvent event) {
-//     if (!event.alt || event.ctrl || event.shift) {
-//       return null;
-//     }
-
-//     if (event.platform == TerminalTargetPlatform.macos) {
-//       return null;
-//     }
-
-//     final key = event.key;
-
-//     if (key.index >= TerminalKey.keyA.index &&
-//         key.index <= TerminalKey.keyZ.index) {
-//       final charCode = key.index - TerminalKey.keyA.index + 65;
-//       final input = [0x1b, charCode];
-//       return String.fromCharCodes(input);
-//     }
-
-//     return null;
-//   }
-// }
-
-/// A [TerminalInputHandler] that translates alt + key events into escape
-/// sequences. For example, alt + a becomes ^[a, and on macOS Option+Arrow
-/// now behaves like word navigation (ESC f / ESC b).
 class AltInputHandler implements TerminalInputHandler {
   const AltInputHandler();
 
@@ -221,22 +192,12 @@ class AltInputHandler implements TerminalInputHandler {
       return null;
     }
 
-    final key = event.key;
-
-    // === macOS Option + Arrow support ===
     if (event.platform == TerminalTargetPlatform.macos) {
-      if (key == TerminalKey.arrowRight) {
-        // ESC f → move forward a word
-        return '\x1bf';
-      }
-      if (key == TerminalKey.arrowLeft) {
-        // ESC b → move backward a word
-        return '\x1bb';
-      }
-      // fall through for other Alt keys (Option + letter)
+      return null;
     }
 
-    // === Regular Alt-letter support ===
+    final key = event.key;
+
     if (key.index >= TerminalKey.keyA.index &&
         key.index <= TerminalKey.keyZ.index) {
       final charCode = key.index - TerminalKey.keyA.index + 65;

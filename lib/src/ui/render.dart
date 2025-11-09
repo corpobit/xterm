@@ -66,26 +66,13 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
           theme: theme,
           textStyle: textStyle,
           textScaler: textScaler,
-        ) {
-    _terminal.addListener(() {
-      _terminalRevision++;
-      markNeedsPaint();
-    });
-  }
-
-//   @override
-// void dispose() {
-//   _terminal.onOutput = null;
-//   super.dispose();
-// }
+        );
 
   // Minimap caching
   Picture? _minimapCache;
   int _lastMinimapLineCount = 0;
   double _lastMinimapScrollOffset = 0.0;
-  Rect? _lastMinimapRect;
-  int _terminalRevision = 0;
-  int _lastRevision = 0;
+  
 
   Terminal _terminal;
   set terminal(Terminal terminal) {
@@ -183,6 +170,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     _showMinimap = value;
     markNeedsPaint();
   }
+
 
   Set<int> _bookmarks = {};
   set bookmarks(Set<int> value) {
@@ -290,10 +278,10 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   /// Check if the given position is within the line number area
   bool isInLineNumberArea(Offset position) {
     if (!_showLineNumbers) return false;
-
+    
     const double lineNumberWidth = 40.0;
     final x = position.dx - _padding.left;
-
+    
     // Check if click is within line number area
     return x >= 0 && x <= lineNumberWidth;
   }
@@ -309,23 +297,21 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   /// Get the line number being hovered over
   int? getHoveredLineNumber(Offset position) {
     if (!_showLineNumbers) return null;
-
+    
     const double lineNumberWidth = 40.0;
     final x = position.dx - _padding.left;
-
+    
     // Check if hover is within line number area
     if (x < 0 || x > lineNumberWidth) return null;
-
+    
     final y = position.dy - _padding.top + _scrollOffset;
     final lineNumber = (y ~/ _painter.cellSize.height) + 1;
-
+    
     // Ensure line number is within valid range
-    if (lineNumber >= 1 &&
-        lineNumber <= _terminal.buffer.lines.length &&
-        y >= 0) {
+    if (lineNumber >= 1 && lineNumber <= _terminal.buffer.lines.length && y >= 0) {
       return lineNumber;
     }
-
+    
     return null;
   }
 
@@ -533,92 +519,87 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
 
   void _paint(PaintingContext context, Offset offset) {
     final canvas = context.canvas;
+
     final lines = _terminal.buffer.lines;
-    if (lines.length == 0) return;
-
     final charHeight = _painter.cellSize.height;
-    const double lineNumberWidth = 40.0;
 
-    // --- Compute visible lines based on scroll ---
-    final totalLines = lines.length;
-    final firstLineOffset = _scrollOffset.clamp(0, totalLines * charHeight);
-    final lastLineOffset =
-        (firstLineOffset + size.height).clamp(0, totalLines * charHeight);
+    final firstLineOffset = _scrollOffset - _padding.top;
+    final lastLineOffset = _scrollOffset + size.height + _padding.bottom;
 
-    final firstLine = (firstLineOffset ~/ charHeight).clamp(0, totalLines - 1);
-    final lastLine =
-        (lastLineOffset ~/ charHeight).clamp(firstLine, totalLines - 1);
+    final firstLine = firstLineOffset ~/ charHeight;
+    final lastLine = lastLineOffset ~/ charHeight;
 
-    for (var i = firstLine; i <= lastLine; i++) {
-      final y = offset.dy +
-          ((i - firstLine) * charHeight - (firstLineOffset % charHeight));
+    final effectFirstLine = firstLine.clamp(0, lines.length - 1);
+    final effectLastLine = lastLine.clamp(0, lines.length - 1);
 
-      // --- Active bookmark highlight ---
+    for (var i = effectFirstLine; i <= effectLastLine; i++) {
+      // Draw highlight for active bookmark line
       if (_activeBookmarkLine != null && i + 1 == _activeBookmarkLine) {
-        final highlightRect =
-            Rect.fromLTWH(offset.dx, y, size.width, charHeight);
+        final highlightRect = Rect.fromLTWH(
+          offset.dx,
+          offset.dy + (i * charHeight + _lineOffset).truncateToDouble(),
+          size.width,
+          charHeight,
+        );
         final highlightPaint = Paint()
           ..color = _painter.theme.foreground.withOpacity(0.10)
           ..style = PaintingStyle.fill;
         canvas.drawRect(highlightRect, highlightPaint);
       }
-
-      // --- Draw line numbers ---
-      if (_showLineNumbers && lines[i].getTrimmedLength() > 0) {
+      // Draw line number gutter
+      const double lineNumberWidth = 40.0;
+      if (_showLineNumbers && i < lines.length && lines[i].getTrimmedLength() > 0) {
         final isHovered = _hoveredLineNumber == i + 1;
         final isBookmarked = _bookmarks.contains(i + 1);
-
+        
         _painter.paintLineNumber(
           canvas,
-          Offset(offset.dx, y),
+          offset.translate(0, (i * charHeight + _lineOffset).truncateToDouble()),
           i + 1,
           width: lineNumberWidth,
-          color: isHovered
-              ? _painter.theme.foreground.withOpacity(0.8)
+          color: isHovered 
+              ? _painter.theme.foreground.withOpacity(0.8)  // Brighter when hovered
               : _painter.theme.foreground.withOpacity(0.35),
-          backgroundColor: isHovered
-              ? _painter.theme.foreground.withOpacity(0.1)
+          backgroundColor: isHovered 
+              ? _painter.theme.foreground.withOpacity(0.1)  // Subtle background when hovered
               : _painter.theme.background,
           isBookmarked: isBookmarked,
           isHovered: isHovered,
         );
+        
+        // Removed hover bookmark icon - just use hover effect only
       }
+      // Draw terminal line content, shifted right for gutter
+      _painter.paintLine(
+        canvas,
+        offset.translate(lineNumberWidth, (i * charHeight + _lineOffset).truncateToDouble()),
+        lines[i],
+      );
 
-      // --- Draw terminal line content with proper visual width handling ---
-      final line = lines[i];
-      double x = offset.dx + lineNumberWidth;
-      final cellData = CellData.empty();
-      for (var j = 0; j < line.length; j++) {
-        line.getCellData(j, cellData);
-        final width = line.getWidth(j);
-        final codePoint = line.getCodePoint(j);
-
-        // Skip continuation cells or empty content
-        if (codePoint != 0) {
-          _painter.paintCell(canvas, Offset(x, y), cellData);
-        }
-
-        x += width * _painter.cellSize.width;
-        if (width == 2) j++; // skip wide char continuation
-      }
-
-      // --- Draw bookmarks ---
-      if (_showLineNumbers &&
-          _bookmarks.contains(i + 1) &&
-          _bookmarkNames.containsKey(i + 1)) {
+      // Draw bookmark badge if this line is bookmarked and line numbers are shown
+      if (_showLineNumbers && _bookmarks.contains(i + 1) && _bookmarkNames.containsKey(i + 1)) {
+        // Draw dashed line from badge to end of line content FIRST (behind badge)
         _paintBookmarkLine(
-            canvas, Offset(offset.dx + lineNumberWidth, y), line);
-        _paintBookmarkBadge(canvas, Offset(offset.dx + lineNumberWidth, y),
-            _bookmarkNames[i + 1]!);
+          canvas,
+          offset.translate(lineNumberWidth, (i * charHeight + _lineOffset).truncateToDouble()),
+          lines[i],
+        );
+        
+        // Draw bookmark badge on top
+        _paintBookmarkBadge(
+          canvas,
+          offset.translate(lineNumberWidth, (i * charHeight + _lineOffset).truncateToDouble()),
+          _bookmarkNames[i + 1]!,
+        );
       }
     }
 
-    // --- Draw cursor if within visible range ---
-    final cursorY = _terminal.buffer.absoluteCursorY;
-    if (cursorY >= firstLine && cursorY <= lastLine) {
+    if (_terminal.buffer.absoluteCursorY >= effectFirstLine &&
+        _terminal.buffer.absoluteCursorY <= effectLastLine) {
       if (_isComposingText) {
         _paintComposingText(canvas, offset + cursorOffset);
       }
+
       if (_shouldShowCursor) {
         _painter.paintCursor(
           canvas,
@@ -629,13 +610,23 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
       }
     }
 
-    // --- Draw highlights and selection ---
-    _paintHighlights(canvas, _controller.highlights, firstLine, lastLine);
+    _paintHighlights(
+      canvas,
+      _controller.highlights,
+      effectFirstLine,
+      effectLastLine,
+    );
+
     if (_controller.selection != null) {
-      _paintSelection(canvas, _controller.selection!, firstLine, lastLine);
+      _paintSelection(
+        canvas,
+        _controller.selection!,
+        effectFirstLine,
+        effectLastLine,
+      );
     }
 
-    // --- Draw minimap ---
+    // Draw minimap if enabled
     if (_showMinimap) {
       _paintMinimapOptimized(canvas, offset);
     }
@@ -646,46 +637,42 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     const double minimapWidth = 120.0;
     const double minimapHeight = 120.0;
     const double minimapPadding = 12.0;
-
+    
     final minimapRect = Rect.fromLTWH(
       size.width - minimapWidth - minimapPadding,
       minimapPadding,
       minimapWidth,
       minimapHeight,
     );
-
+    
     final lines = _terminal.buffer.lines;
     final currentLineCount = lines.length;
     final currentScrollOffset = _scrollOffset;
-
+    
     // Check if we need to regenerate the cache
     final needsCacheUpdate = _minimapCache == null ||
         _lastMinimapLineCount != currentLineCount ||
-        (_lastMinimapScrollOffset - currentScrollOffset).abs() > 10.0 ||
-        _lastMinimapRect != minimapRect ||
-        _lastRevision != _terminalRevision;
-
+        (_lastMinimapScrollOffset - currentScrollOffset).abs() > 10.0;
+    
     if (needsCacheUpdate) {
       _generateMinimapCache(minimapRect);
       _lastMinimapLineCount = currentLineCount;
       _lastMinimapScrollOffset = currentScrollOffset;
-      _lastMinimapRect = minimapRect;
-      // _lastRevision = _terminalRevision;
     }
-
+    
     // Draw cached minimap
     if (_minimapCache != null) {
       canvas.drawPicture(_minimapCache!);
     }
-
+    
     // Draw viewport indicator (this changes frequently, so draw it separately)
     _drawViewportIndicator(canvas, minimapRect, offset);
   }
-
+  
   void _generateMinimapCache(Rect minimapRect) {
     final recorder = PictureRecorder();
     final canvas = Canvas(recorder);
-
+    
     // Draw minimap background
     final backgroundPaint = Paint()
       ..color = _painter.theme.background.withOpacity(0.9);
@@ -693,7 +680,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
       RRect.fromRectAndRadius(minimapRect, const Radius.circular(8)),
       backgroundPaint,
     );
-
+    
     // Draw border
     final borderPaint = Paint()
       ..color = _painter.theme.foreground.withOpacity(0.2)
@@ -703,50 +690,43 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
       RRect.fromRectAndRadius(minimapRect, const Radius.circular(8)),
       borderPaint,
     );
-
+    
     final lines = _terminal.buffer.lines;
     if (lines.length == 0) {
       _minimapCache = recorder.endRecording();
       return;
     }
-
+    
     // Calculate scaling
     final contentHeight = lines.length * _painter.cellSize.height;
     final minimapContentHeight = minimapRect.height - 8;
     final scaleY = minimapContentHeight / contentHeight;
-
+    
     final contentWidth = _terminal.viewWidth * _painter.cellSize.width;
     final minimapContentWidth = minimapRect.width - 8;
     final scaleX = minimapContentWidth / contentWidth;
-
+    
     final minimapOffset = Offset(
       minimapRect.left + 4,
       minimapRect.top + 4,
     );
-
+    
     // OPTIMIZED: Use aggressive sampling for performance
-    final lineSampleRate =
-        (lines.length / minimapContentHeight * scaleY).ceil().clamp(2, 20);
-    final columnSampleRate =
-        (_terminal.viewWidth / minimapContentWidth * scaleX)
-            .ceil()
-            .clamp(2, 10);
-
+    final lineSampleRate = (lines.length / minimapContentHeight * scaleY).ceil().clamp(2, 20);
+    final columnSampleRate = (_terminal.viewWidth / minimapContentWidth * scaleX).ceil().clamp(2, 10);
+    
     for (var i = 0; i < lines.length; i += lineSampleRate) {
       final line = lines[i];
       final y = i * _painter.cellSize.height * scaleY;
-
-      for (var j = 0;
-          j < line.length && j < _terminal.viewWidth;
-          j += columnSampleRate) {
+      
+      for (var j = 0; j < line.length && j < _terminal.viewWidth; j += columnSampleRate) {
         final cellData = CellData.empty();
         line.getCellData(j, cellData);
-
+        
         final charCode = cellData.content & CellContent.codepointMask;
         if (charCode != 0) {
-          final foreground =
-              _painter.resolveForegroundColor(cellData.foreground);
-
+          final foreground = _painter.resolveForegroundColor(cellData.foreground);
+          
           // Simplified rendering - just colored dots
           final cellRect = Rect.fromLTWH(
             minimapOffset.dx + j * _painter.cellSize.width * scaleX,
@@ -754,34 +734,35 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
             (_painter.cellSize.width * scaleX).clamp(0.5, 2.0),
             (_painter.cellSize.height * scaleY).clamp(0.5, 2.0),
           );
-
-          final cellPaint = Paint()..color = foreground.withOpacity(0.6);
+          
+          final cellPaint = Paint()
+            ..color = foreground.withOpacity(0.6);
           canvas.drawRect(cellRect, cellPaint);
         }
       }
     }
-
+    
     _minimapCache = recorder.endRecording();
   }
-
+  
   void _drawViewportIndicator(Canvas canvas, Rect minimapRect, Offset offset) {
     final lines = _terminal.buffer.lines;
     if (lines.length == 0) return;
-
+    
     final contentHeight = lines.length * _painter.cellSize.height;
     final minimapContentHeight = minimapRect.height - 8;
     final scaleY = minimapContentHeight / contentHeight;
-
+    
     final viewportTop = _scrollOffset * scaleY;
     final viewportHeight = _viewportHeight * scaleY;
-
+    
     final viewportRect = Rect.fromLTWH(
       minimapRect.left + 4,
       minimapRect.top + 4 + viewportTop,
       minimapRect.width - 8,
       viewportHeight.clamp(2.0, minimapRect.height - 8),
     );
-
+    
     final viewportPaint = Paint()
       ..color = _painter.theme.cursor.withOpacity(0.3)
       ..style = PaintingStyle.fill;
@@ -789,7 +770,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
       RRect.fromRectAndRadius(viewportRect, const Radius.circular(2)),
       viewportPaint,
     );
-
+    
     final borderPaint = Paint()
       ..color = _painter.theme.cursor.withOpacity(0.8)
       ..style = PaintingStyle.stroke
@@ -799,6 +780,8 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
       borderPaint,
     );
   }
+  
+
 
   /// Paints the text that is currently being composed in IME to [canvas] at
   /// [offset]. [offset] is usually the cursor position.
@@ -900,11 +883,11 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   /// Get the minimap rectangle for interaction handling
   Rect? get minimapRect {
     if (!_showMinimap) return null;
-
+    
     const double minimapWidth = 120.0;
     const double minimapHeight = 120.0;
     const double minimapPadding = 12.0;
-
+    
     return Rect.fromLTWH(
       size.width - minimapWidth - minimapPadding,
       minimapPadding, // Position at top-right
@@ -919,25 +902,24 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     if (minimapRect == null || !minimapRect.contains(position)) {
       return;
     }
-
+    
     const double minimapPadding = 12.0;
     final relativeY = position.dy - minimapPadding;
-    final minimapHeight =
-        120.0; // This is now a fixed height, so no need to calculate it from size.height
-
+    final minimapHeight = 120.0; // This is now a fixed height, so no need to calculate it from size.height
+    
     // Calculate the target scroll position
     final lines = _terminal.buffer.lines;
     if (lines.length == 0) return;
-
+    
     final contentHeight = lines.length * _painter.cellSize.height;
     final scaleY = minimapHeight / contentHeight;
-
+    
     final targetScrollOffset = relativeY / scaleY;
     final maxScrollExtent = _maxScrollExtent;
-
+    
     // Set the scroll position
     final clampedOffset = targetScrollOffset.clamp(0.0, maxScrollExtent);
-
+    
     // Use immediate scrolling for responsive minimap interaction like VS Code
     _offset.jumpTo(clampedOffset);
   }
@@ -945,30 +927,27 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   /// Handle line number click for bookmarking
   void handleLineNumberClick(Offset position) {
     if (!_showLineNumbers) return;
-
+    
     const double lineNumberWidth = 40.0;
-    const double clickTolerance =
-        15.0; // Increased tolerance for easier clicking
+    const double clickTolerance = 15.0; // Increased tolerance for easier clicking
     final x = position.dx - _padding.left;
-
+    
     // Check if click is within line number area with more tolerance
     if (x < -5 || x > lineNumberWidth + clickTolerance) return;
-
+    
     final y = position.dy - _padding.top + _scrollOffset;
     final lineHeight = _painter.cellSize.height;
     final lineNumber = (y ~/ lineHeight) + 1;
-
+    
     // Add vertical tolerance - allow clicking slightly above/below the line
     final lineCenter = (lineNumber - 1) * lineHeight + lineHeight / 2;
     final distanceFromCenter = (y - lineCenter).abs();
-
+    
     // Allow clicking within half a line height above or below the center
     if (distanceFromCenter > lineHeight / 2) return;
-
+    
     // Ensure line number is within valid range
-    if (lineNumber >= 1 &&
-        lineNumber <= _terminal.buffer.lines.length &&
-        y >= -lineHeight / 2) {
+    if (lineNumber >= 1 && lineNumber <= _terminal.buffer.lines.length && y >= -lineHeight/2) {
       _onBookmarkToggle?.call(lineNumber);
     }
   }
@@ -976,7 +955,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   /// Jump to a specific line number
   void jumpToLine(int lineNumber) {
     if (lineNumber < 1 || lineNumber > _terminal.buffer.lines.length) return;
-
+    
     final targetScrollOffset = (lineNumber - 1) * _painter.cellSize.height;
     final maxScrollExtent = _maxScrollExtent;
     final clampedOffset = targetScrollOffset.clamp(0.0, maxScrollExtent);
@@ -986,10 +965,10 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   /// Paint a bookmark badge on the terminal line
   void _paintBookmarkBadge(Canvas canvas, Offset offset, String bookmarkName) {
     // Limit bookmark name to 14 characters
-    final displayName = bookmarkName.length > 14
-        ? '${bookmarkName.substring(0, 11)}...'
+    final displayName = bookmarkName.length > 14 
+        ? '${bookmarkName.substring(0, 11)}...' 
         : bookmarkName;
-
+    
     // Enhanced typography for professional look
     final textPainter = TextPainter(
       text: TextSpan(
@@ -1003,41 +982,37 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
       ),
       textDirection: TextDirection.ltr,
     );
-
+    
     textPainter.layout();
-
+    
     // Calculate badge position (top-right of the visible content area)
     const double lineNumberWidth = 40.0;
-    final contentWidth =
-        size.width - lineNumberWidth - _padding.left - _padding.right;
-    final badgeWidth =
-        textPainter.width + 24; // Increased padding with right inner padding
+    final contentWidth = size.width - lineNumberWidth - _padding.left - _padding.right;
+    final badgeWidth = textPainter.width + 24; // Increased padding with right inner padding
     final badgeHeight = textPainter.height + 8; // Increased padding
-
+    
     // Position badge at the right edge of the content area, higher up
     final badgeX = offset.dx + contentWidth - badgeWidth - 8;
     final badgeY = offset.dy - 3; // Move badge higher
-
+    
     // Ensure badge doesn't go outside the content area
-    final clampedBadgeX =
-        badgeX.clamp(offset.dx, offset.dx + contentWidth - badgeWidth);
-
+    final clampedBadgeX = badgeX.clamp(offset.dx, offset.dx + contentWidth - badgeWidth);
+    
     // Create professional badge with shadow and gradient
     final pointSize = 8.0; // Larger pointing triangle for better visibility
     final badgeLeft = clampedBadgeX + pointSize;
     final badgeRight = clampedBadgeX + badgeWidth;
     final badgeTop = badgeY;
     final badgeBottom = badgeY + badgeHeight;
-
+    
     // Draw shadow first for depth
     final shadowPath = Path();
     shadowPath.moveTo(clampedBadgeX + 1, badgeY + badgeHeight / 2 + 1);
     shadowPath.lineTo(badgeLeft + 1, badgeTop + 1);
     shadowPath.lineTo(badgeLeft + 1, badgeBottom + 1);
     shadowPath.close();
-
-    final shadowRect = Rect.fromLTWH(
-        badgeLeft + 1, badgeTop + 1, badgeWidth - pointSize, badgeHeight);
+    
+    final shadowRect = Rect.fromLTWH(badgeLeft + 1, badgeTop + 1, badgeWidth - pointSize, badgeHeight);
     final shadowRRect = RRect.fromRectAndCorners(
       shadowRect,
       topLeft: const Radius.circular(0),
@@ -1046,21 +1021,20 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
       bottomRight: const Radius.circular(8),
     );
     shadowPath.addRRect(shadowRRect);
-
+    
     final shadowPaint = Paint()
       ..color = Colors.black.withOpacity(0.25)
       ..style = PaintingStyle.fill;
     canvas.drawPath(shadowPath, shadowPaint);
-
+    
     // Draw main badge with gradient
     final badgePath = Path();
     badgePath.moveTo(clampedBadgeX, badgeY + badgeHeight / 2);
     badgePath.lineTo(badgeLeft, badgeTop);
     badgePath.lineTo(badgeLeft, badgeBottom);
     badgePath.close();
-
-    final mainRect =
-        Rect.fromLTWH(badgeLeft, badgeTop, badgeWidth - pointSize, badgeHeight);
+    
+    final mainRect = Rect.fromLTWH(badgeLeft, badgeTop, badgeWidth - pointSize, badgeHeight);
     final mainRRect = RRect.fromRectAndCorners(
       mainRect,
       topLeft: const Radius.circular(0),
@@ -1069,7 +1043,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
       bottomRight: const Radius.circular(8),
     );
     badgePath.addRRect(mainRRect);
-
+    
     // Create gradient for professional look
     final gradient = LinearGradient(
       begin: Alignment.topLeft,
@@ -1079,21 +1053,21 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
         _painter.theme.foreground.withOpacity(0.85),
       ],
     );
-
+    
     final badgePaint = Paint()
       ..shader = gradient.createShader(mainRect)
       ..style = PaintingStyle.fill;
-
+    
     canvas.drawPath(badgePath, badgePaint);
-
+    
     // Draw subtle border for definition
     final borderPaint = Paint()
       ..color = _painter.theme.foreground.withOpacity(0.2)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 0.5;
-
+    
     canvas.drawPath(badgePath, borderPaint);
-
+    
     // Draw badge text with better positioning and right inner padding
     textPainter.paint(
       canvas,
@@ -1104,55 +1078,52 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   /// Paint a dashed line from the end of text to the bookmark badge
   void _paintBookmarkLine(Canvas canvas, Offset offset, dynamic line) {
     const double lineNumberWidth = 40.0;
-    final contentWidth =
-        size.width - lineNumberWidth - _padding.left - _padding.right;
-
+    final contentWidth = size.width - lineNumberWidth - _padding.left - _padding.right;
+    
     // Calculate the end position of the line content
     final lineText = line.toString().trim();
     if (lineText.isEmpty) return;
-
+    
     // Calculate line position (center of the line height)
     final lineY = offset.dy + _painter.cellSize.height / 2;
-
+    
     // Calculate actual text width with extra padding
     final charWidth = _painter.cellSize.width;
     final textWidth = lineText.length * charWidth;
     final textEndX = offset.dx + textWidth + 6; // Add extra padding to text end
-
+    
     // Badge position (right side of content area)
     final badgeStartX = offset.dx + contentWidth - 10;
-
+    
     // Don't draw if there's no gap between text and badge
     if (textEndX >= badgeStartX - 10) return;
-
+    
     // Start from the end of text and go towards the badge
-    final startX = textEndX +
-        16; // Start much further from text to avoid covering characters
-    final endX =
-        badgeStartX; // Go all the way to the badge start (under the arrow)
-
+    final startX = textEndX + 16;  // Start much further from text to avoid covering characters
+    final endX = badgeStartX;  // Go all the way to the badge start (under the arrow)
+    
     // Create dashed line paint
     final linePaint = Paint()
-      ..color = _painter.theme.foreground
-          .withOpacity(0.3) // More transparent for visibility
+      ..color = _painter.theme.foreground.withOpacity(0.3) // More transparent for visibility
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5;
-
+    
     // Draw dashed line from end of text to badge
     final path = Path();
-
+    
     // Create dashed effect
     const dashLength = 6.0;
     const gapLength = 3.0;
     double currentX = startX;
-
+    
     while (currentX < endX) {
       final dashEnd = (currentX + dashLength).clamp(currentX, endX);
       path.moveTo(currentX, lineY);
       path.lineTo(dashEnd, lineY);
       currentX += dashLength + gapLength;
     }
-
+    
     canvas.drawPath(path, linePaint);
   }
+
 }

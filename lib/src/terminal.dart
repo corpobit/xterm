@@ -265,7 +265,7 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
   /// [TerminalKey].
   ///
   /// See also:
-  /// - [keyInput]
+  // / - [keyInput]
   /// - [textInput]
   /// - [paste]
   bool charInput(
@@ -359,19 +359,31 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
     newWidth = max(newWidth, 1);
     newHeight = max(newHeight, 1);
 
-    onResize?.call(newWidth, newHeight, pixelWidth ?? 0, pixelHeight ?? 0);
+    if (newWidth < _viewWidth) {
+      // Skip shrinking to prevent line wrap artifacts
+      return;
+    }
 
-    //we need to resize both buffers so that they are ready when we switch between them
-    _altBuffer.resize(_viewWidth, _viewHeight, newWidth, newHeight);
-    _mainBuffer.resize(_viewWidth, _viewHeight, newWidth, newHeight);
+    //  Update internal dimensions first
+    final oldWidth = _viewWidth;
+    final oldHeight = _viewHeight;
 
     _viewWidth = newWidth;
     _viewHeight = newHeight;
 
+    //  Notify listeners
+    onResize?.call(newWidth, newHeight, pixelWidth ?? 0, pixelHeight ?? 0);
+
+    //  Resize both buffers with *old → new* transition
+    _altBuffer.resize(oldWidth, oldHeight, newWidth, newHeight);
+    _mainBuffer.resize(oldWidth, oldHeight, newWidth, newHeight);
+
+    // Clear alt buffer scrollback if active
     if (buffer == _altBuffer) {
       buffer.clearScrollback();
     }
 
+    //  Reset margins
     _altBuffer.resetVerticalMargins();
     _mainBuffer.resetVerticalMargins();
   }

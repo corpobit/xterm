@@ -140,28 +140,25 @@ class TerminalPainter {
 
   /// Paints [line] to [canvas] at [offset]. The x offset of [offset] is usually
   /// 0, and the y offset is the top of the line.
-
-  void paintLine(Canvas canvas, Offset offset, BufferLine line) {
+  void paintLine(
+    Canvas canvas,
+    Offset offset,
+    BufferLine line,
+  ) {
     final cellData = CellData.empty();
-    double x = 0;
+    final cellWidth = _cellSize.width;
 
     for (var i = 0; i < line.length; i++) {
       line.getCellData(i, cellData);
 
-      final charWidth = line.getWidth(i);
-      final codePoint = line.getCodePoint(i);
+      final charWidth = cellData.content >> CellContent.widthShift;
+      final cellOffset = offset.translate(i * cellWidth, 0);
 
-      // Skip invisible / zero-width cells (continuation of a wide char)
-      if (codePoint == 0) {
-        x += charWidth * _cellSize.width;
-        continue;
+      paintCell(canvas, cellOffset, cellData);
+
+      if (charWidth == 2) {
+        i++;
       }
-
-      paintCell(canvas, offset.translate(x, 0), cellData);
-
-      x += charWidth * _cellSize.width;
-
-      if (charWidth == 2) i++; // skip continuation cell
     }
   }
 
@@ -178,26 +175,23 @@ class TerminalPainter {
   }) {
     final text = lineNumber.toString();
     final textColor = color ?? _theme.foreground.withOpacity(0.35);
-
+    
     // Draw hover highlight if needed
     if (isHovered) {
-      final hoverRect =
-          Rect.fromLTWH(offset.dx, offset.dy, width, _cellSize.height);
+      final hoverRect = Rect.fromLTWH(offset.dx, offset.dy, width, _cellSize.height);
       final hoverPaint = Paint()
         ..color = _theme.foreground.withOpacity(0.08)
         ..style = PaintingStyle.fill;
       canvas.drawRect(hoverRect, hoverPaint);
     }
-
-    final style = _textStyle
-        .toTextStyle(
-          color: textColor,
-          backgroundColor: Colors.transparent,
-        )
-        .copyWith(
-          fontSize: _textStyle.fontSize * 0.95,
-          fontWeight: FontWeight.normal,
-        );
+    
+    final style = _textStyle.toTextStyle(
+      color: textColor,
+      backgroundColor: Colors.transparent,
+    ).copyWith(
+      fontSize: _textStyle.fontSize * 0.95,
+      fontWeight: FontWeight.normal,
+    );
 
     final builder = ParagraphBuilder(style.getParagraphStyle());
     builder.pushStyle(style.getTextStyle(textScaler: _textScaler));
@@ -209,17 +203,16 @@ class TerminalPainter {
     final dx = offset.dx + width - paragraph.maxIntrinsicWidth - 6;
     final dy = offset.dy + (_cellSize.height - paragraph.height) / 2;
     canvas.drawParagraph(paragraph, Offset(dx, dy));
-
+    
     // Draw bookmark circle indicator on the left side (only for bookmarked lines)
     if (isBookmarked) {
       final circleRadius = 4.0;
-      final circleCenter =
-          Offset(offset.dx + 8, offset.dy + _cellSize.height / 2);
+      final circleCenter = Offset(offset.dx + 8, offset.dy + _cellSize.height / 2);
       final circlePaint = Paint()
         ..color = _theme.foreground.withOpacity(0.8)
         ..style = PaintingStyle.fill;
       canvas.drawCircle(circleCenter, circleRadius, circlePaint);
-
+      
       // Add a subtle glow effect
       final glowPaint = Paint()
         ..color = _theme.foreground.withOpacity(0.2)

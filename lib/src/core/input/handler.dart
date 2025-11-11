@@ -192,12 +192,22 @@ class AltInputHandler implements TerminalInputHandler {
       return null;
     }
 
-    if (event.platform == TerminalTargetPlatform.macos) {
-      return null;
-    }
-
     final key = event.key;
 
+    // === macOS Option + Arrow support ===
+    if (event.platform == TerminalTargetPlatform.macos) {
+      if (key == TerminalKey.arrowRight) {
+        // ESC f → move forward a word
+        return '\x1bf';
+      }
+      if (key == TerminalKey.arrowLeft) {
+        // ESC b → move backward a word
+        return '\x1bb';
+      }
+      // fall through for other Alt keys (Option + letter)
+    }
+
+    // === Regular Alt-letter support ===
     if (key.index >= TerminalKey.keyA.index &&
         key.index <= TerminalKey.keyZ.index) {
       final charCode = key.index - TerminalKey.keyA.index + 65;

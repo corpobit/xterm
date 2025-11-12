@@ -583,6 +583,7 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
 
   @override
   void eraseDisplay() {
+    // added
     _buffer.eraseDisplay();
   }
 

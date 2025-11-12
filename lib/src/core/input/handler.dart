@@ -85,7 +85,10 @@ class CascadeInputHandler implements TerminalInputHandler {
 }
 
 /// The default input handler for the terminal. That is composed of a
-/// [KeytabInputHandler], a [CtrlInputHandler], and a [AltInputHandler].
+/// [AltInputHandler], a [KeytabInputHandler], and a [CtrlInputHandler].
+///
+/// [AltInputHandler] is placed first to handle Option+Arrow keys on macOS
+/// before [KeytabInputHandler] can match them with incorrect rules.
 ///
 /// It's possible to override the default input handler behavior by chaining
 /// another input handler before or after the default input handler using
@@ -94,9 +97,9 @@ class CascadeInputHandler implements TerminalInputHandler {
 /// See also:
 ///  * [CascadeInputHandler]
 const defaultInputHandler = CascadeInputHandler([
+  AltInputHandler(),
   KeytabInputHandler(),
   CtrlInputHandler(),
-  AltInputHandler(),
 ]);
 
 /// A [TerminalInputHandler] that translates key events according to a keytab

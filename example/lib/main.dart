@@ -22,7 +22,7 @@ bool get isDesktop {
 
 String get shell {
   if (Platform.isMacOS || Platform.isLinux) {
-    return Platform.environment['SHELL'] ?? 'bash';
+    return 'bash';
   }
 
   if (Platform.isWindows) {
@@ -30,6 +30,26 @@ String get shell {
   }
 
   return 'sh';
+}
+
+TerminalTargetPlatform get terminalPlatform {
+  if (kIsWeb) {
+    return TerminalTargetPlatform.web;
+  }
+  switch (defaultTargetPlatform) {
+    case TargetPlatform.android:
+      return TerminalTargetPlatform.android;
+    case TargetPlatform.iOS:
+      return TerminalTargetPlatform.ios;
+    case TargetPlatform.fuchsia:
+      return TerminalTargetPlatform.fuchsia;
+    case TargetPlatform.linux:
+      return TerminalTargetPlatform.linux;
+    case TargetPlatform.macOS:
+      return TerminalTargetPlatform.macos;
+    case TargetPlatform.windows:
+      return TerminalTargetPlatform.windows;
+  }
 }
 
 class XtermExampleApp extends StatelessWidget {
@@ -58,6 +78,7 @@ class TerminalPage extends StatefulWidget {
 class _TerminalPageState extends State<TerminalPage> {
   final terminal = Terminal(
     maxLines: 10000,
+    platform: terminalPlatform,
   );
 
   final terminalController = TerminalController();

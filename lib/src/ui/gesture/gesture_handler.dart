@@ -79,13 +79,13 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
 
   bool _handleKeyEvent(KeyEvent event) {
     if (event is KeyDownEvent) {
-      if (event.logicalKey == LogicalKeyboardKey.shiftLeft || 
+      if (event.logicalKey == LogicalKeyboardKey.shiftLeft ||
           event.logicalKey == LogicalKeyboardKey.shiftRight) {
         _isShiftPressed = true;
         return false;
       }
     } else if (event is KeyUpEvent) {
-      if (event.logicalKey == LogicalKeyboardKey.shiftLeft || 
+      if (event.logicalKey == LogicalKeyboardKey.shiftLeft ||
           event.logicalKey == LogicalKeyboardKey.shiftRight) {
         _isShiftPressed = false;
         return false;
@@ -166,19 +166,21 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
       final currentSelection = widget.terminalController.selection;
       final cursorX = terminalView.widget.terminal.buffer.cursorX;
       final cursorY = terminalView.widget.terminal.buffer.cursorY;
-      
-      final anchorPosition = currentSelection != null 
-          ? currentSelection.begin 
+
+      final anchorPosition = currentSelection != null
+          ? currentSelection.begin
           : CellOffset(cursorX, cursorY);
-          
-      final anchor = terminalView.widget.terminal.buffer.createAnchorFromOffset(anchorPosition);
-      final positionAnchor = terminalView.widget.terminal.buffer.createAnchorFromOffset(position);
+
+      final anchor = terminalView.widget.terminal.buffer
+          .createAnchorFromOffset(anchorPosition);
+      final positionAnchor =
+          terminalView.widget.terminal.buffer.createAnchorFromOffset(position);
 
       if (currentSelection != null) {
-        final isReversed = currentSelection.begin.y > currentSelection.end.y || 
-            (currentSelection.begin.y == currentSelection.end.y && 
-             currentSelection.begin.x > currentSelection.end.x);
-             
+        final isReversed = currentSelection.begin.y > currentSelection.end.y ||
+            (currentSelection.begin.y == currentSelection.end.y &&
+                currentSelection.begin.x > currentSelection.end.x);
+
         if (isReversed) {
           widget.terminalController.setSelection(
             positionAnchor,
@@ -193,7 +195,8 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
           );
         }
       } else {
-        if (anchorPosition.y < position.y || (anchorPosition.y == position.y && anchorPosition.x < position.x)) {
+        if (anchorPosition.y < position.y ||
+            (anchorPosition.y == position.y && anchorPosition.x < position.x)) {
           widget.terminalController.setSelection(
             anchor,
             positionAnchor,
@@ -208,7 +211,8 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
         }
       }
     } else {
-      final anchor = terminalView.widget.terminal.buffer.createAnchorFromOffset(position);
+      final anchor =
+          terminalView.widget.terminal.buffer.createAnchorFromOffset(position);
       widget.terminalController.setSelection(
         anchor,
         anchor,
@@ -250,7 +254,8 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
     final position = renderTerminal.getCellOffset(details.localPosition);
     if (position == null) return;
 
-    final anchor = terminalView.widget.terminal.buffer.createAnchorFromOffset(position);
+    final anchor =
+        terminalView.widget.terminal.buffer.createAnchorFromOffset(position);
 
     widget.terminalController.setSelection(
       anchor,
@@ -266,16 +271,18 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
     final selection = widget.terminalController.selection;
     if (selection == null) return;
 
-    final anchor = terminalView.widget.terminal.buffer.createAnchorFromOffset(position);
+    final anchor =
+        terminalView.widget.terminal.buffer.createAnchorFromOffset(position);
     final beginAnchor = selection.begin is CellAnchor
         ? selection.begin as CellAnchor
-        : terminalView.widget.terminal.buffer.createAnchorFromOffset(selection.begin);
+        : terminalView.widget.terminal.buffer
+            .createAnchorFromOffset(selection.begin);
 
     // Maintain the same selection direction as the current selection
-    final isReversed = selection.begin.y > selection.end.y || 
-        (selection.begin.y == selection.end.y && 
-         selection.begin.x > selection.end.x);
-         
+    final isReversed = selection.begin.y > selection.end.y ||
+        (selection.begin.y == selection.end.y &&
+            selection.begin.x > selection.end.x);
+
     if (isReversed) {
       widget.terminalController.setSelection(
         anchor,
@@ -292,6 +299,7 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   }
 
   void onDragStart(DragStartDetails details) {
+    
     _lastDragStartDetails = details;
     final position = renderTerminal.getCellOffset(details.localPosition);
     if (position == null) return;
@@ -301,21 +309,23 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
       final currentSelection = widget.terminalController.selection;
       final cursorX = terminalView.widget.terminal.buffer.cursorX;
       final cursorY = terminalView.widget.terminal.buffer.cursorY;
-      
+
       // If there's an existing selection, use its start point as the anchor
-      final anchorPosition = currentSelection != null 
-          ? currentSelection.begin 
+      final anchorPosition = currentSelection != null
+          ? currentSelection.begin
           : CellOffset(cursorX, cursorY);
-          
-      final anchor = terminalView.widget.terminal.buffer.createAnchorFromOffset(anchorPosition);
-      final positionAnchor = terminalView.widget.terminal.buffer.createAnchorFromOffset(position);
+
+      final anchor = terminalView.widget.terminal.buffer
+          .createAnchorFromOffset(anchorPosition);
+      final positionAnchor =
+          terminalView.widget.terminal.buffer.createAnchorFromOffset(position);
 
       // Always maintain the same selection direction as the current selection
       if (currentSelection != null) {
-        final isReversed = currentSelection.begin.y > currentSelection.end.y || 
-            (currentSelection.begin.y == currentSelection.end.y && 
-             currentSelection.begin.x > currentSelection.end.x);
-             
+        final isReversed = currentSelection.begin.y > currentSelection.end.y ||
+            (currentSelection.begin.y == currentSelection.end.y &&
+                currentSelection.begin.x > currentSelection.end.x);
+
         if (isReversed) {
           widget.terminalController.setSelection(
             positionAnchor,
@@ -331,7 +341,8 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
         }
       } else {
         // For new selections, ensure begin is before end
-        if (anchorPosition.y < position.y || (anchorPosition.y == position.y && anchorPosition.x < position.x)) {
+        if (anchorPosition.y < position.y ||
+            (anchorPosition.y == position.y && anchorPosition.x < position.x)) {
           widget.terminalController.setSelection(
             anchor,
             positionAnchor,
@@ -347,7 +358,8 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
       }
     } else {
       // Normal selection
-      final anchor = terminalView.widget.terminal.buffer.createAnchorFromOffset(position);
+      final anchor =
+          terminalView.widget.terminal.buffer.createAnchorFromOffset(position);
       widget.terminalController.setSelection(
         anchor,
         anchor,
@@ -366,14 +378,16 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
     if (_isShiftPressed) {
       // Get the current selection's start point as the anchor
       final anchorPosition = selection.begin;
-      final anchor = terminalView.widget.terminal.buffer.createAnchorFromOffset(anchorPosition);
-      final positionAnchor = terminalView.widget.terminal.buffer.createAnchorFromOffset(position);
+      final anchor = terminalView.widget.terminal.buffer
+          .createAnchorFromOffset(anchorPosition);
+      final positionAnchor =
+          terminalView.widget.terminal.buffer.createAnchorFromOffset(position);
 
       // Maintain the same selection direction as the current selection
-      final isReversed = selection.begin.y > selection.end.y || 
-          (selection.begin.y == selection.end.y && 
-           selection.begin.x > selection.end.x);
-           
+      final isReversed = selection.begin.y > selection.end.y ||
+          (selection.begin.y == selection.end.y &&
+              selection.begin.x > selection.end.x);
+
       if (isReversed) {
         widget.terminalController.setSelection(
           positionAnchor,
@@ -389,10 +403,12 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
       }
     } else {
       // Normal selection
-      final anchor = terminalView.widget.terminal.buffer.createAnchorFromOffset(position);
+      final anchor =
+          terminalView.widget.terminal.buffer.createAnchorFromOffset(position);
       final beginAnchor = selection.begin is CellAnchor
           ? selection.begin as CellAnchor
-          : terminalView.widget.terminal.buffer.createAnchorFromOffset(selection.begin);
+          : terminalView.widget.terminal.buffer
+              .createAnchorFromOffset(selection.begin);
       widget.terminalController.setSelection(
         beginAnchor,
         anchor,

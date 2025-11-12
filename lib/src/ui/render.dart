@@ -82,6 +82,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   int _terminalRevision = 0;
   int _lastRevision = 0;
   Rect? _lastMinimapRect;
+  bool _justCleared = false;
 
   Terminal _terminal;
   set terminal(Terminal terminal) {
@@ -249,16 +250,16 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   }
 
   void _onTerminalChange() {
-
-      // Make sure scroll offset doesn't exceed content height after clearing
-  final maxScroll = _maxScrollExtent;
-  if (_offset.pixels > maxScroll) {
-    try {
-      _offset.jumpTo(maxScroll);
-    } catch (_) {
-      // Ignore if not attached yet
+    // Make sure scroll offset doesn't exceed content height after clearing
+    final maxScroll = _maxScrollExtent;
+    if (_offset.pixels > maxScroll) {
+      try {
+        _terminal.buffer.clear();
+        _offset.jumpTo(maxScroll);
+      } catch (_) {
+        // Ignore if not attached yet
+      }
     }
-  }
 
     markNeedsLayout();
     _notifyEditableRect();
@@ -380,39 +381,28 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   }
 
   /// Get the [CellOffset] of the cell that [offset] is in.
-  // CellOffset getCellOffset(Offset offset) {
-  //   const double lineNumberWidth = 40.0; // must match gutter width in paint
-  //   final x = offset.dx - _padding.left - lineNumberWidth;
-  //   final y = offset.dy - _padding.top + _scrollOffset;
-  //   final row = y ~/ _painter.cellSize.height;
-  //   final col = x ~/ _painter.cellSize.width;
-  //   return CellOffset(
-  //     col.clamp(0, _terminal.viewWidth - 1),
-  //     row.clamp(0, _terminal.buffer.lines.length - 1),
-  //   );
-  // }
   CellOffset getCellOffset(Offset offset) {
-  const double lineNumberWidth = 40.0;
-  final x = offset.dx - _padding.left - lineNumberWidth;
-  final y = offset.dy - _padding.top + _scrollOffset;
+    const double lineNumberWidth = 40.0;
+    final x = offset.dx - _padding.left - lineNumberWidth;
+    final y = offset.dy - _padding.top + _scrollOffset;
 
-  final row = (y ~/ _painter.cellSize.height).toInt();
-  final col = (x ~/ _painter.cellSize.width).toInt();
+    final row = (y ~/ _painter.cellSize.height).toInt();
+    final col = (x ~/ _painter.cellSize.width).toInt();
 
-  final bufferHeight = _terminal.buffer.lines.length;
-  final viewWidth = _terminal.viewWidth;
+    final bufferHeight = _terminal.buffer.lines.length;
+    final viewWidth = _terminal.viewWidth;
 
-  // SAFETY: If buffer is empty, return cursor at (0,0)
-  if (bufferHeight == 0) {
-    return CellOffset(0, 0);
+    // SAFETY: If buffer is empty, return cursor at (0,0)
+    if (bufferHeight == 0) {
+      return CellOffset(0, 0);
+    }
+
+    // SAFETY: Clamp row properly even if bufferHeight == 0
+    final safeRow = row.clamp(0, bufferHeight - 1);
+    final safeCol = col.clamp(0, viewWidth - 1);
+
+    return CellOffset(safeCol, safeRow);
   }
-
-  // SAFETY: Clamp row properly even if bufferHeight == 0
-  final safeRow = row.clamp(0, bufferHeight - 1);
-  final safeCol = col.clamp(0, viewWidth - 1);
-
-  return CellOffset(safeCol, safeRow);
-}
 
   /// Selects entire words in the terminal that contains [from] and [to].
   void selectWord(Offset from, [Offset? to]) {
@@ -520,15 +510,15 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     _offset.applyViewportDimension(_viewportHeight);
     _offset.applyContentDimensions(0, _maxScrollExtent);
 
-     // Clamp scroll offset to valid range
-  final maxScroll = _maxScrollExtent;
-  if (_offset.pixels > maxScroll) {
-    try {
-      _offset.jumpTo(maxScroll);
-    } catch (_) {
-      // ignore
+    // Clamp scroll offset to valid range
+    final maxScroll = _maxScrollExtent;
+    if (_offset.pixels > maxScroll) {
+      try {
+        _offset.jumpTo(maxScroll);
+      } catch (_) {
+        // ignore
+      }
     }
-  }
   }
 
   bool get _isComposingText {
@@ -576,10 +566,9 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     final lines = _terminal.buffer.lines;
 
     if (lines.length == 0) {
-    // Nothing to paint — prevents RangeError when terminal is cleared
-    return;
-  }
-
+      // Nothing to paint — prevents RangeError when terminal is cleared
+      return;
+    }
 
     final charHeight = _painter.cellSize.height;
 
@@ -903,8 +892,8 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     int lastLine,
   ) {
 // added
-      final totalLines = _terminal.buffer.lines.length;
-  if (totalLines == 0) return;
+    final totalLines = _terminal.buffer.lines.length;
+    if (totalLines == 0) return;
 
     for (final segment in selection.toSegments()) {
       if (segment.line >= _terminal.buffer.lines.length) {
@@ -929,8 +918,8 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     int firstLine,
     int lastLine,
   ) {
-      final totalLines = _terminal.buffer.lines.length;
-  if (totalLines == 0) return;
+    final totalLines = _terminal.buffer.lines.length;
+    if (totalLines == 0) return;
     for (var highlight in _controller.highlights) {
       final range = highlight.range?.normalized;
 

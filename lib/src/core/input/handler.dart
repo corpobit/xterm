@@ -186,6 +186,41 @@ class CtrlInputHandler implements TerminalInputHandler {
 
 /// A [TerminalInputHandler] that translates alt + key events into escape
 /// sequences. For example, alt + a becomes ^[a.
+// class AltInputHandler implements TerminalInputHandler {
+//   const AltInputHandler();
+
+//   @override
+//   String? call(TerminalKeyboardEvent event) {
+//     if (!event.alt || event.ctrl || event.shift) {
+//       return null;
+//     }
+
+//     final key = event.key;
+
+//     // === macOS Option + Arrow support ===
+//     if (event.platform == TerminalTargetPlatform.macos) {
+//       if (key == TerminalKey.arrowRight) {
+//         // ESC f → move forward a word
+//         return '\x1bf';
+//       }
+//       if (key == TerminalKey.arrowLeft) {
+//         // ESC b → move backward a word
+//         return '\x1bb';
+//       }
+//       // fall through for other Alt keys (Option + letter)
+//     }
+
+//     // === Regular Alt-letter support ===
+//     if (key.index >= TerminalKey.keyA.index &&
+//         key.index <= TerminalKey.keyZ.index) {
+//       final charCode = key.index - TerminalKey.keyA.index + 65;
+//       final input = [0x1b, charCode];
+//       return String.fromCharCodes(input);
+//     }
+
+//     return null;
+//   }
+// }
 class AltInputHandler implements TerminalInputHandler {
   const AltInputHandler();
 
@@ -197,25 +232,19 @@ class AltInputHandler implements TerminalInputHandler {
 
     final key = event.key;
 
-    // === macOS Option + Arrow support ===
-    if (event.platform == TerminalTargetPlatform.macos) {
-      if (key == TerminalKey.arrowRight) {
-        // ESC f → move forward a word
-        return '\x1bf';
-      }
-      if (key == TerminalKey.arrowLeft) {
-        // ESC b → move backward a word
-        return '\x1bb';
-      }
-      // fall through for other Alt keys (Option + letter)
+    // === Universal Option + Arrow support for all POSIX shells ===
+    if (key == TerminalKey.arrowRight) {
+      return '\x1b[1;3C'; // Forward word
+    }
+    if (key == TerminalKey.arrowLeft) {
+      return '\x1b[1;3D'; // Backward word
     }
 
-    // === Regular Alt-letter support ===
+    // === Regular Alt-letter ===
     if (key.index >= TerminalKey.keyA.index &&
         key.index <= TerminalKey.keyZ.index) {
       final charCode = key.index - TerminalKey.keyA.index + 65;
-      final input = [0x1b, charCode];
-      return String.fromCharCodes(input);
+      return String.fromCharCodes([0x1b, charCode]);
     }
 
     return null;

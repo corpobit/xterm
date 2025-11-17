@@ -57,7 +57,7 @@ class TerminalGestureHandler extends StatefulWidget {
 class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   TerminalViewState get terminalView => widget.terminalView;
 
-  RenderTerminal get renderTerminal => terminalView.renderTerminal;
+  RenderTerminal? get renderTerminal => terminalView.renderTerminal;
 
   DragStartDetails? _lastDragStartDetails;
 
@@ -125,8 +125,8 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   }) {
     // Check if the terminal should and can handle the tap down event.
     var handled = false;
-    if (_shouldSendTapEvent) {
-      handled = renderTerminal.mouseEvent(
+    if (_shouldSendTapEvent && renderTerminal != null) {
+      handled = renderTerminal!.mouseEvent(
         button,
         TerminalMouseButtonState.down,
         details.localPosition,
@@ -145,8 +145,8 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
     bool forceCallback = false,
   }) {
     var handled = false;
-    if (_shouldSendTapEvent) {
-      handled = renderTerminal.mouseEvent(
+    if (_shouldSendTapEvent && renderTerminal != null) {
+      handled = renderTerminal!.mouseEvent(
         button,
         TerminalMouseButtonState.up,
         details.localPosition,
@@ -159,7 +159,9 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   }
 
   void onTapDown(TapDownDetails details) {
-    final position = renderTerminal.getCellOffset(details.localPosition);
+    final rt = renderTerminal;
+    if (rt == null) return;
+    final position = rt.getCellOffset(details.localPosition);
     if (position == null) return;
 
     if (_isShiftPressed) {
@@ -242,16 +244,20 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   }
 
   void onDoubleTapDown(TapDownDetails details) {
-    final position = renderTerminal.getCellOffset(details.localPosition);
+    final rt = renderTerminal;
+    if (rt == null) return;
+    final position = rt.getCellOffset(details.localPosition);
     if (position == null) return;
 
     // Use the word selection functionality from RenderTerminal
-    renderTerminal.selectWord(details.localPosition);
+    rt.selectWord(details.localPosition);
   }
 
   void onLongPressStart(LongPressStartDetails details) {
     _lastLongPressStartDetails = details;
-    final position = renderTerminal.getCellOffset(details.localPosition);
+    final rt = renderTerminal;
+    if (rt == null) return;
+    final position = rt.getCellOffset(details.localPosition);
     if (position == null) return;
 
     final anchor =
@@ -265,7 +271,9 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   }
 
   void onLongPressMoveUpdate(LongPressMoveUpdateDetails details) {
-    final position = renderTerminal.getCellOffset(details.localPosition);
+    final rt = renderTerminal;
+    if (rt == null) return;
+    final position = rt.getCellOffset(details.localPosition);
     if (position == null) return;
 
     final selection = widget.terminalController.selection;
@@ -301,7 +309,9 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   void onDragStart(DragStartDetails details) {
     
     _lastDragStartDetails = details;
-    final position = renderTerminal.getCellOffset(details.localPosition);
+    final rt = renderTerminal;
+    if (rt == null) return;
+    final position = rt.getCellOffset(details.localPosition);
     if (position == null) return;
 
     if (_isShiftPressed) {
@@ -369,7 +379,9 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   }
 
   void onDragUpdate(DragUpdateDetails details) {
-    final position = renderTerminal.getCellOffset(details.localPosition);
+    final rt = renderTerminal;
+    if (rt == null) return;
+    final position = rt.getCellOffset(details.localPosition);
     if (position == null) return;
 
     final selection = widget.terminalController.selection;

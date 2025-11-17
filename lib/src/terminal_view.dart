@@ -23,6 +23,8 @@ import 'package:xterm/src/ui/themes.dart';
 import 'package:xterm/src/ui/find/find_controller.dart';
 import 'package:xterm/src/ui/find/find_widget.dart';
 import 'package:xterm/src/ui/buffer_usage_indicator.dart';
+import 'package:xterm/src/ui/autocomplete/autocomplete_controller.dart';
+import 'package:xterm/src/ui/autocomplete/autocomplete_widget.dart';
 
 class TerminalView extends StatefulWidget {
   const TerminalView(
@@ -60,6 +62,8 @@ class TerminalView extends StatefulWidget {
     this.readOnly = false,
     this.hardwareKeyboardOnly = false,
     this.simulateScroll = true,
+    this.aiAutoCompleteEnabled = false,
+    this.aiAccessToken,
   });
 
   /// Global key to access the TerminalViewState methods
@@ -182,6 +186,12 @@ class TerminalView extends StatefulWidget {
   /// emulators. True by default.
   final bool simulateScroll;
 
+  /// Whether AI autocomplete is enabled. [false] by default.
+  final bool aiAutoCompleteEnabled;
+
+  /// Access token for AI autocomplete API. Required if [aiAutoCompleteEnabled] is true.
+  final String? aiAccessToken;
+
   @override
   State<TerminalView> createState() => TerminalViewState();
 }
@@ -206,18 +216,25 @@ class TerminalViewState extends State<TerminalView>
 
   late FindController _findController;
 
+  AutocompleteController? _autocompleteController;
+
   MouseCursor _currentCursor = SystemMouseCursors.text;
   int? _hoveredLineNumber;
 
-  RenderTerminal get renderTerminal =>
-      _viewportKey.currentContext!.findRenderObject() as RenderTerminal;
+  RenderTerminal? get renderTerminal {
+    final context = _viewportKey.currentContext;
+    if (context == null) return null;
+    return context.findRenderObject() as RenderTerminal?;
+  }
 
   /// Scroll to a specific line number
   void scrollToLine(int lineNumber) {
     if (lineNumber < 0) return;
+    final rt = renderTerminal;
+    if (rt == null) return;
 
     // Calculate the pixel offset for the line
-    final lineHeight = renderTerminal.lineHeight;
+    final lineHeight = rt.lineHeight;
     final targetOffset = lineNumber * lineHeight;
 
     // Get the viewport height to calculate center position
@@ -239,8 +256,11 @@ class TerminalViewState extends State<TerminalView>
 
   /// Scroll to a specific match in the terminal
   void _scrollToMatch(CellOffset matchOffset) {
+    final rt = renderTerminal;
+    if (rt == null) return;
+    
     // Calculate the pixel offset for the match
-    final lineHeight = renderTerminal.lineHeight;
+    final lineHeight = rt.lineHeight;
     final targetOffset = matchOffset.y * lineHeight;
 
     // Get the viewport height to calculate center position
@@ -274,6 +294,12 @@ class TerminalViewState extends State<TerminalView>
     _shortcutManager = ShortcutManager(
       shortcuts: widget.shortcuts ?? defaultTerminalShortcuts,
     );
+    if (widget.aiAutoCompleteEnabled && widget.aiAccessToken != null) {
+      _autocompleteController = AutocompleteController(
+        terminal: widget.terminal,
+        accessToken: widget.aiAccessToken,
+      );
+    }
     super.initState();
   }
 
@@ -313,6 +339,7 @@ class TerminalViewState extends State<TerminalView>
       _scrollController.dispose();
     }
     _findController.dispose();
+    _autocompleteController?.dispose();
     _shortcutManager.dispose();
     super.dispose();
   }
@@ -355,8 +382,8 @@ class TerminalViewState extends State<TerminalView>
     child = TerminalScrollGestureHandler(
       terminal: widget.terminal,
       simulateScroll: widget.simulateScroll,
-      getCellOffset: (offset) => renderTerminal.getCellOffset(offset),
-      getLineHeight: () => renderTerminal.lineHeight,
+      getCellOffset: (offset) => renderTerminal?.getCellOffset(offset) ?? CellOffset(0, 0),
+      getLineHeight: () => renderTerminal?.lineHeight ?? 20.0,
       child: child,
     );
 
@@ -450,6 +477,7 @@ class TerminalViewState extends State<TerminalView>
       onHover: (event) {
         try {
           final renderTerminal = this.renderTerminal;
+          if (renderTerminal == null) return;
           final cursor =
               renderTerminal.getCursorForPosition(event.localPosition);
           if (_currentCursor != cursor) {
@@ -494,7 +522,7 @@ class TerminalViewState extends State<TerminalView>
       child: child,
     );
 
-    // Add find widget and buffer usage indicator as overlays
+    // Add find widget, buffer usage indicator, and autocomplete as overlays
     child = Stack(
       children: [
         child,
@@ -508,6 +536,13 @@ class TerminalViewState extends State<TerminalView>
             terminal: widget.terminal,
             theme: widget.theme,
             textStyle: widget.textStyle.toTextStyle(),
+          ),
+        if (_autocompleteController != null && renderTerminal != null)
+          AutocompleteWidget(
+            controller: _autocompleteController!,
+            renderTerminal: renderTerminal!,
+            theme: widget.theme,
+            textStyle: widget.textStyle,
           ),
       ],
     );
@@ -524,16 +559,21 @@ class TerminalViewState extends State<TerminalView>
   }
 
   Rect get cursorRect {
-    return renderTerminal.cursorOffset & renderTerminal.cellSize;
+    final rt = renderTerminal;
+    if (rt == null) return Rect.zero;
+    return rt.cursorOffset & rt.cellSize;
   }
 
   Rect get globalCursorRect {
-    return renderTerminal.localToGlobal(renderTerminal.cursorOffset) &
-        renderTerminal.cellSize;
+    final rt = renderTerminal;
+    if (rt == null) return Rect.zero;
+    return rt.localToGlobal(rt.cursorOffset) & rt.cellSize;
   }
 
   void _onTapUp(TapUpDetails details) {
-    final offset = renderTerminal.getCellOffset(details.localPosition);
+    final rt = renderTerminal;
+    if (rt == null) return;
+    final offset = rt.getCellOffset(details.localPosition);
     widget.onTapUp?.call(details, offset);
   }
 
@@ -550,41 +590,53 @@ class TerminalViewState extends State<TerminalView>
   }
 
   void _onSecondaryTapDown(TapDownDetails details) {
-    final offset = renderTerminal.getCellOffset(details.localPosition);
+    final rt = renderTerminal;
+    if (rt == null) return;
+    final offset = rt.getCellOffset(details.localPosition);
     widget.onSecondaryTapDown?.call(details, offset);
   }
 
   void _onSecondaryTapUp(TapUpDetails details) {
-    final offset = renderTerminal.getCellOffset(details.localPosition);
+    final rt = renderTerminal;
+    if (rt == null) return;
+    final offset = rt.getCellOffset(details.localPosition);
     widget.onSecondaryTapUp?.call(details, offset);
   }
 
   void _onMinimapTap(TapDownDetails details) {
-    renderTerminal.handleMinimapInteraction(details.localPosition,
-        isDragging: false);
+    final rt = renderTerminal;
+    if (rt == null) return;
+    rt.handleMinimapInteraction(details.localPosition, isDragging: false);
   }
 
   void _onMinimapPanStart(DragStartDetails details) {
-    renderTerminal.handleMinimapInteraction(details.localPosition,
-        isDragging: true);
+    final rt = renderTerminal;
+    if (rt == null) return;
+    rt.handleMinimapInteraction(details.localPosition, isDragging: true);
   }
 
   void _onMinimapDrag(DragUpdateDetails details) {
-    renderTerminal.handleMinimapInteraction(details.localPosition,
-        isDragging: true);
+    final rt = renderTerminal;
+    if (rt == null) return;
+    rt.handleMinimapInteraction(details.localPosition, isDragging: true);
   }
 
   void _onMinimapPanEnd(DragEndDetails details) {
-    renderTerminal.handleMinimapInteraction(details.localPosition,
-        isDragging: false);
+    final rt = renderTerminal;
+    if (rt == null) return;
+    rt.handleMinimapInteraction(details.localPosition, isDragging: false);
   }
 
   void _onLineNumberTap(TapDownDetails details) {
-    renderTerminal.handleLineNumberClick(details.localPosition);
+    final rt = renderTerminal;
+    if (rt == null) return;
+    rt.handleLineNumberClick(details.localPosition);
   }
 
   void _onLineNumberTapUp(TapUpDetails details) {
-    renderTerminal.handleLineNumberClick(details.localPosition);
+    final rt = renderTerminal;
+    if (rt == null) return;
+    rt.handleLineNumberClick(details.localPosition);
   }
 
   bool get hasInputConnection {
@@ -601,6 +653,11 @@ class TerminalViewState extends State<TerminalView>
 
     if (!consumed) {
       widget.terminal.textInput(text);
+    }
+
+    // Trigger autocomplete check after text input
+    if (widget.aiAutoCompleteEnabled && _autocompleteController != null) {
+      _autocompleteController!.checkForAutocomplete();
     }
 
     _scrollToBottom();
@@ -669,6 +726,52 @@ class TerminalViewState extends State<TerminalView>
       return KeyEventResult.ignored;
     }
 
+<<<<<<< Updated upstream
+=======
+    // 6. Handle autocomplete if enabled and active
+    if (widget.aiAutoCompleteEnabled && _autocompleteController != null) {
+      if (event is KeyDownEvent) {
+        final key = keyToTerminalKey(event.logicalKey);
+        
+        // Handle autocomplete interactions when completions are available
+        if (_autocompleteController!.hasCompletions) {
+          // Right Arrow: Navigate to next suggestion (cycles forward)
+          if (key == TerminalKey.arrowRight) {
+            _autocompleteController!.selectNext();
+            return KeyEventResult.handled;
+          }
+          
+          // Left Arrow: Navigate to previous suggestion (cycles backward)
+          // (Up/Down arrows are not used to avoid conflict with terminal history)
+          if (key == TerminalKey.arrowLeft) {
+            _autocompleteController!.selectPrevious();
+            return KeyEventResult.handled;
+          }
+          
+          // Escape: Dismiss autocomplete
+          if (key == TerminalKey.escape) {
+            _autocompleteController!.clear();
+            return KeyEventResult.handled;
+          }
+          
+          // Tab: Accept current suggestion (only when autocomplete is visible)
+          // This avoids conflict with normal tab - tab only accepts when autocomplete is showing
+          // Note: Space is NOT used for acceptance - it works normally for typing
+          if (key == TerminalKey.tab && !HardwareKeyboard.instance.isShiftPressed) {
+            _autocompleteController!.acceptCompletion();
+            return KeyEventResult.handled;
+          }
+        }
+        
+        // Trigger autocomplete check on backspace and other editing keys
+        if (key == TerminalKey.backspace || key == TerminalKey.delete) {
+          _autocompleteController!.checkForAutocomplete();
+        }
+      }
+    }
+
+    // 7. ALL OTHER KEYS
+>>>>>>> Stashed changes
     final key = keyToTerminalKey(event.logicalKey);
 
     if (key == null) {
@@ -684,6 +787,10 @@ class TerminalViewState extends State<TerminalView>
 
     if (handled) {
       _scrollToBottom();
+      // Trigger autocomplete check after key input
+      if (widget.aiAutoCompleteEnabled && _autocompleteController != null) {
+        _autocompleteController!.checkForAutocomplete();
+      }
     }
 
     return handled ? KeyEventResult.handled : KeyEventResult.ignored;

@@ -4,10 +4,19 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_pty/flutter_pty.dart';
 import 'package:xterm/xterm.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await dotenv.load(fileName: ".env");
+    print('[Example] .env file loaded successfully');
+  } catch (e) {
+    print('[Example] Warning: Could not load .env file: $e');
+    print('[Example] AI autocomplete will be disabled');
+  }
   runApp(const XtermExampleApp());
 }
 
@@ -138,6 +147,13 @@ class _TerminalPageState extends State<TerminalPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Get access token from .env file
+    final accessToken = dotenv.env['ACCESS_TOKEN'];
+    final aiAutoCompleteEnabled = accessToken != null && accessToken.isNotEmpty;
+    
+    print('[Example] AI Autocomplete enabled: $aiAutoCompleteEnabled');
+    print('[Example] Access token present: ${accessToken != null && accessToken.isNotEmpty}');
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: SafeArea(
@@ -147,6 +163,8 @@ class _TerminalPageState extends State<TerminalPage> {
           autofocus: true,
           backgroundOpacity: 0.7,
           showMinimap: true,
+          aiAutoCompleteEnabled: aiAutoCompleteEnabled,
+          aiAccessToken: accessToken,
           onSecondaryTapDown: (details, offset) async {
             final selection = terminalController.selection;
             if (selection != null) {

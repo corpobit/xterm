@@ -27,22 +27,22 @@ class AutocompleteWidget extends StatelessWidget {
         final cursorOffset = renderTerminal.cursorOffset;
         final isLoading = controller.isLoading;
         final hasCompletions = controller.hasCompletions;
+        final isLoadingAgent = controller.isLoadingAgent;
         
-        // Check if current line is empty (no user input)
-        final buffer = controller.terminal.buffer;
-        final currentLine = buffer.currentLine;
-        final cursorX = buffer.cursorX;
-        final lineText = currentLine.getText(0, cursorX);
+        // Agent response is now written directly to terminal as ANSI-formatted text
+        // No need to show overlay widget
         
-        // Extract user input by removing prompt to check if line is truly empty
-        final userInput = _extractUserInputFromLine(lineText);
-        final isLineEmpty = userInput.trim().isEmpty;
-        
-        // Show loading indicator when fetching
-        if (isLoading) {
+        // Show loading indicator when fetching agent response
+        if (isLoadingAgent) {
+          final lineHeight = renderTerminal.lineHeight;
+          final loadingTop = cursorOffset.dy + lineHeight;
+          // Position at the beginning of the line (accounting for line numbers if present)
+          const double lineNumberWidth = 40.0; // Match the line number width in render.dart
+          final loadingLeft = lineNumberWidth; // Start after line number area
+          
           return Positioned(
-            left: cursorOffset.dx,
-            top: cursorOffset.dy,
+            left: loadingLeft,
+            top: loadingTop,
             child: _LoadingIndicator(
               theme: theme,
               textStyle: textStyle,
@@ -50,12 +50,12 @@ class AutocompleteWidget extends StatelessWidget {
           );
         }
         
-        // Show placeholder when line is empty
-        if (isLineEmpty && !hasCompletions) {
+        // Show loading indicator when fetching autocomplete
+        if (isLoading) {
           return Positioned(
             left: cursorOffset.dx,
             top: cursorOffset.dy,
-            child: _PlaceholderText(
+            child: _LoadingIndicator(
               theme: theme,
               textStyle: textStyle,
             ),
@@ -89,45 +89,6 @@ class AutocompleteWidget extends StatelessWidget {
         );
       },
     );
-  }
-  
-  /// Extract user input from line text by removing prompt patterns
-  /// (Same logic as AutocompleteController._extractUserInput)
-  String _extractUserInputFromLine(String lineText) {
-    int promptEnd = -1;
-    
-    // Pattern 1: Look for % $ # > followed by space (most common)
-    final promptMarkerPattern = RegExp(r'[%$#>]\s+');
-    final markerMatches = promptMarkerPattern.allMatches(lineText);
-    if (markerMatches.isNotEmpty) {
-      promptEnd = markerMatches.last.end;
-    }
-    
-    // Pattern 2: Look for user@host pattern followed by space or colon+space
-    if (promptEnd == -1) {
-      final userHostPattern = RegExp(r'\w+@[\w\-\.]+[:\s]+');
-      final userHostMatches = userHostPattern.allMatches(lineText);
-      if (userHostMatches.isNotEmpty) {
-        for (final match in userHostMatches) {
-          final end = match.end;
-          if (end < lineText.length) {
-            final afterMatch = lineText.substring(end);
-            final markerMatch = promptMarkerPattern.firstMatch(afterMatch);
-            if (markerMatch != null) {
-              promptEnd = end + markerMatch.end;
-              break;
-            }
-          }
-        }
-      }
-    }
-    
-    // Extract user input after prompt
-    if (promptEnd > 0 && promptEnd < lineText.length) {
-      return lineText.substring(promptEnd);
-    }
-    
-    return lineText;
   }
 }
 
@@ -170,27 +131,6 @@ class _AutocompleteOverlay extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _PlaceholderText extends StatelessWidget {
-  final TerminalTheme theme;
-  final TerminalStyle textStyle;
-
-  const _PlaceholderText({
-    required this.theme,
-    required this.textStyle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      'Type a part of the command and let AI bring the rest',
-      style: textStyle.toTextStyle().copyWith(
-        color: theme.foreground.withOpacity(0.4),
-        fontStyle: FontStyle.italic,
-      ),
     );
   }
 }

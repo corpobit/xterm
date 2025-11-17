@@ -402,11 +402,48 @@ class TerminalViewState extends State<TerminalView>
         },
         onComposing: _onComposing,
         onAction: (action) {
+          // Block input while AI response is streaming
+          if (widget.aiAutoCompleteEnabled && 
+              _autocompleteController != null && 
+              _autocompleteController!.isStreaming) {
+            return; // Ignore input during streaming
+          }
+
           _scrollToBottom();
           // Android sends TextInputAction.newline when the user presses the virtual keyboard's enter key.
           if (action == TextInputAction.done ||
               action == TextInputAction.newline) {
+            // Check for agent mode BEFORE sending Enter to terminal
+            if (widget.aiAutoCompleteEnabled && _autocompleteController != null) {
+              final buffer = widget.terminal.buffer;
+              final currentLine = buffer.currentLine;
+              final cursorX = buffer.cursorX;
+              final lineText = currentLine.getText(0, cursorX);
+              
+              // Check if line contains ">" anywhere (agent mode command)
+              if (lineText.contains('>')) {
+                // Pattern: "> something" anywhere in the line
+                final agentMatch = RegExp(r'>\s*(\S.*)').firstMatch(lineText);
+                if (agentMatch != null) {
+                  // This is an agent mode command - don't send to shell
+                  widget.terminal.write('\r\n');
+                  Future.delayed(const Duration(milliseconds: 100), () {
+                    _autocompleteController!.checkAndHandleAgentMode();
+                  });
+                  return;
+                }
+              }
+            }
+            
+            // Send enter first so command is echoed, then check for agent mode
             widget.terminal.keyInput(TerminalKey.enter);
+            // Check for agent mode after sending enter (command will be echoed)
+            if (widget.aiAutoCompleteEnabled && _autocompleteController != null) {
+              // Use a delay to ensure command is echoed and written to buffer first
+              Future.delayed(const Duration(milliseconds: 200), () {
+                _autocompleteController!.checkAndHandleAgentMode();
+              });
+            }
           }
         },
         onKeyEvent: _handleKeyEvent,
@@ -644,6 +681,13 @@ class TerminalViewState extends State<TerminalView>
   }
 
   void _onInsert(String text) {
+    // Block input while AI response is streaming (except Control+C handled in _handleKeyEvent)
+    if (widget.aiAutoCompleteEnabled && 
+        _autocompleteController != null && 
+        _autocompleteController!.isStreaming) {
+      return; // Ignore input during streaming
+    }
+
     final key = charToTerminalKey(text.trim());
 
     // On mobile platforms there is no guarantee that virtual keyboard will
@@ -671,6 +715,29 @@ class TerminalViewState extends State<TerminalView>
     final resultOverride = widget.onKeyEvent?.call(focusNode, event);
     if (resultOverride != null && resultOverride != KeyEventResult.ignored) {
       return resultOverride;
+    }
+
+    // Handle Control+C to stop AI response streaming
+    if (event is KeyDownEvent && 
+        widget.aiAutoCompleteEnabled && 
+        _autocompleteController != null &&
+        _autocompleteController!.isStreaming) {
+      final isCtrlPressed = HardwareKeyboard.instance.isControlPressed;
+      final isMetaPressed = HardwareKeyboard.instance.isMetaPressed;
+      
+      if ((isCtrlPressed || isMetaPressed) && 
+          event.logicalKey == LogicalKeyboardKey.keyC) {
+        _autocompleteController!.stopStreaming();
+        // Also send Control+C to terminal (interrupt signal)
+        widget.terminal.keyInput(
+          TerminalKey.keyC,
+          ctrl: true,
+        );
+        return KeyEventResult.handled;
+      }
+      
+      // Block all other input during streaming
+      return KeyEventResult.handled;
     }
 
     // Handle find shortcuts
@@ -775,6 +842,37 @@ class TerminalViewState extends State<TerminalView>
       return KeyEventResult.ignored;
     }
 
+    // Check for agent mode BEFORE sending Enter to terminal
+    // If current line contains ">", intercept Enter and handle agent mode instead
+    if (key == TerminalKey.enter && widget.aiAutoCompleteEnabled && _autocompleteController != null) {
+      final buffer = widget.terminal.buffer;
+      final currentLine = buffer.currentLine;
+      final cursorX = buffer.cursorX;
+      final lineText = currentLine.getText(0, cursorX);
+      
+      // Check if line contains ">" anywhere (agent mode command)
+      // This check must happen BEFORE prompt extraction, as prompt extraction might remove the >
+      if (lineText.contains('>')) {
+        // Extract user input to get the message after the prompt and >
+        final userInput = _autocompleteController!.extractUserInput(lineText);
+        final trimmed = userInput.trim();
+        
+        // Check if the extracted input starts with ">" or contains ">" pattern
+        // Pattern: "> something" anywhere in the line
+        final agentMatch = RegExp(r'>\s*(\S.*)').firstMatch(lineText);
+        if (agentMatch != null || trimmed.startsWith('>')) {
+          // This is an agent mode command - don't send to shell
+          // Write newline to echo the command, then handle agent mode
+          widget.terminal.write('\r\n');
+          // Then handle agent mode
+          Future.delayed(const Duration(milliseconds: 100), () {
+            _autocompleteController!.checkAndHandleAgentMode();
+          });
+          return KeyEventResult.handled;
+        }
+      }
+    }
+
     final handled = widget.terminal.keyInput(
       key,
       ctrl: HardwareKeyboard.instance.isControlPressed,
@@ -784,9 +882,18 @@ class TerminalViewState extends State<TerminalView>
 
     if (handled) {
       _scrollToBottom();
-      // Trigger autocomplete check after key input
-      if (widget.aiAutoCompleteEnabled && _autocompleteController != null) {
-        _autocompleteController!.checkForAutocomplete();
+      
+      // Check for agent mode on Enter key after sending it to terminal (fallback)
+      if (key == TerminalKey.enter && widget.aiAutoCompleteEnabled && _autocompleteController != null) {
+        // Use a delay to ensure command is echoed and written to buffer first
+        Future.delayed(const Duration(milliseconds: 200), () {
+          _autocompleteController!.checkAndHandleAgentMode();
+        });
+      } else {
+        // Trigger autocomplete check after other key input
+        if (widget.aiAutoCompleteEnabled && _autocompleteController != null) {
+          _autocompleteController!.checkForAutocomplete();
+        }
       }
     }
 

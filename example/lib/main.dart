@@ -163,6 +163,7 @@ class _TerminalPageState extends State<TerminalPage> {
           autofocus: true,
           backgroundOpacity: 0.7,
           showMinimap: true,
+          
           aiAutoCompleteEnabled: aiAutoCompleteEnabled,
           aiAccessToken: accessToken,
           onSecondaryTapDown: (details, offset) async {

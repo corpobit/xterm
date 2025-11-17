@@ -241,8 +241,13 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
 
   void _onScroll() {
     _stickToBottom = _scrollOffset >= _maxScrollExtent;
-    markNeedsLayout();
-    _notifyEditableRect();
+    // Defer layout update to avoid mutating during layout pass
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (attached) {
+        markNeedsLayout();
+        _notifyEditableRect();
+      }
+    });
   }
 
   void _onFocusChange() {

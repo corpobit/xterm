@@ -85,12 +85,35 @@ class AutocompleteController extends ChangeNotifier {
   void _onTerminalChange() {
     // Check for agent mode when terminal changes (e.g., after Enter is pressed)
     // This is more reliable than using a delay
-    final currentLine = terminal.buffer.absoluteCursorY;
-    if (currentLine != _lastCheckedLine) {
-      _lastCheckedLine = currentLine;
+    final absoluteCursorY = terminal.buffer.absoluteCursorY;
+    if (absoluteCursorY != _lastCheckedLine) {
+      _lastCheckedLine = absoluteCursorY;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         checkAndHandleAgentMode();
       });
+    }
+    
+    // Check if current line contains ">" (agent mode) - disable autocomplete
+    // Check the original lineText before prompt extraction to catch ">" anywhere
+    try {
+      final buffer = terminal.buffer;
+      final currentLine = buffer.currentLine;
+      final cursorX = buffer.cursorX;
+      final lineText = currentLine.getText(0, cursorX);
+      
+      // Check if line contains ">" pattern (agent mode command)
+      // Look for pattern like "> something" anywhere in the line
+      if (lineText.contains('>')) {
+        final agentMatch = RegExp(r'>\s*(\S.*)').firstMatch(lineText);
+        if (agentMatch != null) {
+          // Agent mode - clear any existing completions and don't trigger autocomplete
+          _clearCompletions();
+          _debounceTimer?.cancel();
+          return;
+        }
+      }
+    } catch (e) {
+      // If check fails, continue with normal autocomplete flow
     }
     
     // Debounce API calls - only fire after user stops typing
@@ -113,16 +136,20 @@ class AutocompleteController extends ChangeNotifier {
       // Get text from the current line up to cursor
       final lineText = currentLine.getText(0, cursorX);
       
+      // Check if line contains ">" pattern (agent mode command) BEFORE prompt extraction
+      // Look for pattern like "> something" anywhere in the line
+      if (lineText.contains('>')) {
+        final agentMatch = RegExp(r'>\s*(\S.*)').firstMatch(lineText);
+        if (agentMatch != null) {
+          // Agent mode - don't show autocomplete, just clear it
+          _clearCompletions();
+          return;
+        }
+      }
+      
       // Extract user input by removing prompt
         final userInput = extractUserInput(lineText);
       final trimmed = userInput.trim();
-      
-      // Check if this is agent mode (starts with >)
-      if (trimmed.startsWith('>')) {
-        // Agent mode - don't show autocomplete, just clear it
-        _clearCompletions();
-        return;
-      }
       
       // Only trigger if there's meaningful text (at least 1 character for faster response)
       if (trimmed.isEmpty) {
@@ -344,6 +371,29 @@ class AutocompleteController extends ChangeNotifier {
   /// Manually trigger autocomplete check (call this after text input)
   /// Debounces API calls - only fires after user stops typing
   void checkForAutocomplete() {
+    // Check if current line contains ">" (agent mode) - disable autocomplete
+    // Check the original lineText before prompt extraction to catch ">" anywhere
+    try {
+      final buffer = terminal.buffer;
+      final currentLine = buffer.currentLine;
+      final cursorX = buffer.cursorX;
+      final lineText = currentLine.getText(0, cursorX);
+      
+      // Check if line contains ">" pattern (agent mode command)
+      // Look for pattern like "> something" anywhere in the line
+      if (lineText.contains('>')) {
+        final agentMatch = RegExp(r'>\s*(\S.*)').firstMatch(lineText);
+        if (agentMatch != null) {
+          // Agent mode - clear any existing completions and don't trigger autocomplete
+          _clearCompletions();
+          _debounceTimer?.cancel();
+          return;
+        }
+      }
+    } catch (e) {
+      // If check fails, continue with normal autocomplete flow
+    }
+    
     _debounceTimer?.cancel();
     // Debounce: wait for user to stop typing (500ms delay for faster response)
     // This ensures API is only called when user pauses, not on every keystroke

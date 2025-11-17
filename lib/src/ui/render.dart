@@ -512,8 +512,26 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   /// Update the scroll offset based on the current terminal state. This should
   /// be called in [performLayout] after the viewport size has been updated.
   void _updateScrollOffset() {
+    // Save the current scroll position if user has scrolled away from bottom
+    final preserveScroll = !_stickToBottom;
+    final savedScroll = preserveScroll ? _offset.pixels : null;
+    
     _offset.applyViewportDimension(_viewportHeight);
     _offset.applyContentDimensions(0, _maxScrollExtent);
+    
+    // If user has scrolled away from bottom, restore their scroll position
+    // Use correctBy to avoid triggering layout cycles
+    if (preserveScroll && savedScroll != null) {
+      final targetScroll = savedScroll.clamp(0.0, _maxScrollExtent);
+      final difference = targetScroll - _offset.pixels;
+      if (difference.abs() > 0.1) {
+        try {
+          _offset.correctBy(difference);
+        } catch (_) {
+          // ignore
+        }
+      }
+    }
 
     // Clamp scroll offset to valid range
     final maxScroll = _maxScrollExtent;

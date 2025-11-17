@@ -86,12 +86,9 @@ class AutocompleteController extends ChangeNotifier {
     // Check for agent mode when terminal changes (e.g., after Enter is pressed)
     // This is more reliable than using a delay
     final currentLine = terminal.buffer.absoluteCursorY;
-    print('[AgentMode] Terminal changed, current line: $currentLine, last checked: $_lastCheckedLine');
     if (currentLine != _lastCheckedLine) {
       _lastCheckedLine = currentLine;
-      print('[AgentMode] Scheduling agent mode check');
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        print('[AgentMode] PostFrameCallback executing');
         checkAndHandleAgentMode();
       });
     }
@@ -159,13 +156,11 @@ class AutocompleteController extends ChangeNotifier {
   /// This should be called after Enter is pressed, so we check the previous line
   bool checkAndHandleAgentMode() {
     if (accessToken == null) {
-      print('[AgentMode] No access token');
       return false;
     }
     
     // Prevent multiple simultaneous agent mode checks (but allow even if autocomplete is loading)
     if (_isLoadingAgent) {
-      print('[AgentMode] Agent mode already loading');
       return false;
     }
     
@@ -173,21 +168,16 @@ class AutocompleteController extends ChangeNotifier {
       final buffer = terminal.buffer;
       final absoluteCursorY = buffer.absoluteCursorY;
       
-      print('[AgentMode] Checking line $absoluteCursorY');
-      
       // After Enter, cursor is on a new line, so check the previous line
       if (absoluteCursorY > 0) {
         final previousLine = buffer.lines[absoluteCursorY - 1];
         final lineText = previousLine.getText(0, previousLine.length);
-        
-        print('[AgentMode] Previous line text: "$lineText"');
         
         // Fallback: check if line contains > at any position (in case prompt detection failed)
         // Look for pattern like "> something" anywhere in the line
         final directMatch = RegExp(r'>\s*(\S.*)').firstMatch(lineText);
         if (directMatch != null) {
           final message = directMatch.group(1)?.trim() ?? '';
-          print('[AgentMode] Direct match found: "$message"');
           if (message.isNotEmpty) {
             _fetchAgentResponse(message);
             return true;
@@ -197,22 +187,18 @@ class AutocompleteController extends ChangeNotifier {
         // Extract user input by removing prompt
         final userInput = extractUserInput(lineText);
         final trimmed = userInput.trim();
-        print('[AgentMode] Extracted user input: "$trimmed"');
         
         // Check if command starts with > (either directly or after prompt removal)
         if (trimmed.startsWith('>')) {
           final message = trimmed.substring(1).trim();
-          print('[AgentMode] Message after >: "$message"');
           if (message.isNotEmpty) {
             _fetchAgentResponse(message);
             return true;
           }
         }
-      } else {
-        print('[AgentMode] No previous line (absoluteCursorY = $absoluteCursorY)');
       }
     } catch (e) {
-      print('[AgentMode] Error: $e');
+      // Silently handle errors
     }
     
     return false;
@@ -221,7 +207,6 @@ class AutocompleteController extends ChangeNotifier {
   Future<void> _fetchAgentResponse(String message) async {
     if (accessToken == null) return;
     
-    print('[AgentMode] Fetching agent response for: "$message"');
     _isLoadingAgent = true;
     _agentResponse = null;
     notifyListeners();
@@ -247,14 +232,12 @@ class AutocompleteController extends ChangeNotifier {
         }),
       );
 
-      print('[AgentMode] Response status: ${response.statusCode}');
       if (response.statusCode == 200) {
         String markdown = '';
         
         // Try to parse as JSON first
         try {
           final data = jsonDecode(response.body);
-          print('[AgentMode] Response data (JSON): $data');
           if (data is Map && data['success'] == true && data['result'] != null) {
             // Get markdown from JSON response
             markdown = data['result']['markdown'] ?? data['result']['response'] ?? '';
@@ -265,17 +248,14 @@ class AutocompleteController extends ChangeNotifier {
           }
         } catch (e) {
           // If JSON parsing fails, treat the response body as plain markdown
-          print('[AgentMode] Response is not JSON, treating as plain text/markdown');
           markdown = response.body;
         }
         
-        print('[AgentMode] Markdown response: "$markdown"');
         _agentResponse = markdown;
         
         // Convert markdown to ANSI-formatted text and write to terminal
         if (markdown.isNotEmpty) {
           final ansiText = MarkdownToAnsi.convert(markdown);
-          print('[AgentMode] Writing ANSI-formatted markdown to terminal (generative)');
           // Write newline before response
           terminal.write('\r\n');
           // Stream the response character by character for generative effect
@@ -295,12 +275,9 @@ class AutocompleteController extends ChangeNotifier {
           });
         }
       } else {
-        print('[AgentMode] Response status is not 200: ${response.statusCode}');
-        print('[AgentMode] Response body: ${response.body}');
         _agentResponse = null;
       }
     } catch (e) {
-      print('[AgentMode] Error fetching response: $e');
       _agentResponse = null;
     } finally {
       _isLoadingAgent = false;

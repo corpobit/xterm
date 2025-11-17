@@ -80,11 +80,10 @@ class MarkdownToAnsi {
   }
 
   static String _formatHeader(String text, int level) {
-    // Headers: subtle bold with faint for transparency
-    final bold = '\x1b[1m';
+    // Headers: use faint for transparency (removed bold to keep it transparent)
     final faint = '\x1b[2m';
     final reset = '\x1b[0m';
-    return '$bold$faint$text$reset';
+    return '$faint$text$reset';
   }
 
   static String _formatParagraph(String text) {
@@ -95,17 +94,23 @@ class MarkdownToAnsi {
   }
 
   static String _formatCodeBlock(String code) {
-    // Code blocks: indent with faint for transparency
+    // Code blocks: use a subtle background color to make them stand out like real code blocks
+    // Use 256-color mode: \x1b[48;5;236m for dark gray background (236 is a common dark gray)
+    final bgColor = '\x1b[48;5;236m'; // Dark gray background (256-color mode)
     final faint = '\x1b[2m';
     final reset = '\x1b[0m';
+    final resetBg = '\x1b[49m'; // Reset background color
     final lines = code.split('\n');
     final result = StringBuffer();
+    
     for (var i = 0; i < lines.length; i++) {
-      result.write('$faint  ${lines[i]}$reset');
+      // Each line gets: background color + faint text + 2 spaces indent + code + reset
+      result.write('$bgColor$faint  ${lines[i]}$reset$resetBg');
       if (i < lines.length - 1) {
         result.write('\r\n');
       }
     }
+    
     return result.toString();
   }
 
@@ -128,14 +133,13 @@ class MarkdownToAnsi {
   static String _formatInlineMarkdown(String text) {
     final result = StringBuffer();
     var i = 0;
-    final bold = '\x1b[1m';
     final faint = '\x1b[2m';
     final reset = '\x1b[0m';
 
     while (i < text.length) {
-      // Bold text **text** - bold with faint for transparency
+      // Bold text **text** - just use faint for transparency (remove bold to keep it transparent)
       if (i < text.length - 1 && text[i] == '*' && text[i + 1] == '*') {
-        result.write('$bold$faint');
+        result.write(faint);
         i += 2;
         final boldEnd = text.indexOf('**', i);
         if (boldEnd != -1) {

@@ -726,8 +726,6 @@ class TerminalViewState extends State<TerminalView>
       return KeyEventResult.ignored;
     }
 
-<<<<<<< Updated upstream
-=======
     // 6. Handle autocomplete if enabled and active
     if (widget.aiAutoCompleteEnabled && _autocompleteController != null) {
       if (event is KeyDownEvent) {
@@ -771,7 +769,6 @@ class TerminalViewState extends State<TerminalView>
     }
 
     // 7. ALL OTHER KEYS
->>>>>>> Stashed changes
     final key = keyToTerminalKey(event.logicalKey);
 
     if (key == null) {

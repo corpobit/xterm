@@ -17,6 +17,7 @@ dependencies:
   flutter:
     sdk: flutter
   zmodem: ^0.0.6
+  http: ^0.13.5
 
 dev_dependencies:
   flutter_test:

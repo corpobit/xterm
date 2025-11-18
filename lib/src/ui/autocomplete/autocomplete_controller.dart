@@ -217,9 +217,11 @@ class AutocompleteController extends ChangeNotifier {
         final userInput = extractUserInput(lineText);
         final trimmed = userInput.trim();
         
-        // Check if user input starts with ">" (agent mode command)
-        // Since extractUserInput removes the prompt, any > here is user input
-        if (trimmed.startsWith('>')) {
+        // Only trigger agent mode if:
+        // 1. User input starts with ">" 
+        // 2. User input is NOT the entire line (meaning prompt extraction worked)
+        // This prevents false positives when prompt extraction fails and returns the whole line
+        if (trimmed.startsWith('>') && userInput != lineText) {
           // Extract message after ">" (e.g., "> hi" -> "hi", ">" -> "")
           final message = trimmed.length > 1 ? trimmed.substring(1).trim() : '';
           _fetchAgentResponse(message);

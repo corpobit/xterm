@@ -430,10 +430,11 @@ class TerminalViewState extends State<TerminalView>
               final userInput = _autocompleteController!.extractUserInput(lineText);
               final trimmed = userInput.trim();
               
-              // Check if user input starts with ">" (agent mode command)
-              // This prevents false positives from prompts like "~/path/to/dir>"
-              // because extractUserInput removes the prompt, so any > here is user input
-              if (trimmed.startsWith('>')) {
+              // Only trigger agent mode if:
+              // 1. User input starts with ">" 
+              // 2. User input is NOT the entire line (meaning prompt extraction worked)
+              // This prevents false positives when prompt extraction fails and returns the whole line
+              if (trimmed.startsWith('>') && userInput != lineText) {
                 // This is an agent mode command - don't send to shell
                 widget.terminal.write('\r\n');
                 Future.delayed(const Duration(milliseconds: 100), () {
@@ -869,10 +870,11 @@ class TerminalViewState extends State<TerminalView>
       final userInput = _autocompleteController!.extractUserInput(lineText);
       final trimmed = userInput.trim();
       
-      // Check if user input starts with ">" (agent mode command)
-      // This prevents false positives from prompts like "~/path/to/dir>"
-      // because extractUserInput removes the prompt, so any > here is user input
-      if (trimmed.startsWith('>')) {
+      // Only trigger agent mode if:
+      // 1. User input starts with ">" 
+      // 2. User input is NOT the entire line (meaning prompt extraction worked)
+      // This prevents false positives when prompt extraction fails and returns the whole line
+      if (trimmed.startsWith('>') && userInput != lineText) {
         // This is an agent mode command - don't send to shell
         // Write newline to echo the command, then handle agent mode
         widget.terminal.write('\r\n');

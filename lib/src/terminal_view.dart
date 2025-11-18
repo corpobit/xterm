@@ -397,16 +397,22 @@ class TerminalViewState extends State<TerminalView>
         deleteDetection: widget.deleteDetection,
         onInsert: _onInsert,
         onDelete: () {
+          // Block delete while AI response is streaming or agent mode is loading
+          if (widget.aiAutoCompleteEnabled && 
+              _autocompleteController != null && 
+              (_autocompleteController!.isStreaming || _autocompleteController!.isLoadingAgent)) {
+            return; // Ignore delete during streaming or agent mode
+          }
           _scrollToBottom();
           widget.terminal.keyInput(TerminalKey.backspace);
         },
         onComposing: _onComposing,
         onAction: (action) {
-          // Block input while AI response is streaming
+          // Block input while AI response is streaming or agent mode is loading
           if (widget.aiAutoCompleteEnabled && 
               _autocompleteController != null && 
-              _autocompleteController!.isStreaming) {
-            return; // Ignore input during streaming
+              (_autocompleteController!.isStreaming || _autocompleteController!.isLoadingAgent)) {
+            return; // Ignore input during streaming or agent mode
           }
 
           _scrollToBottom();
@@ -420,18 +426,20 @@ class TerminalViewState extends State<TerminalView>
               final cursorX = buffer.cursorX;
               final lineText = currentLine.getText(0, cursorX);
               
-              // Check if line contains ">" anywhere (agent mode command)
-              if (lineText.contains('>')) {
-                // Pattern: "> something" anywhere in the line
-                final agentMatch = RegExp(r'>\s*(\S.*)').firstMatch(lineText);
-                if (agentMatch != null) {
-                  // This is an agent mode command - don't send to shell
-                  widget.terminal.write('\r\n');
-                  Future.delayed(const Duration(milliseconds: 100), () {
-                    _autocompleteController!.checkAndHandleAgentMode();
-                  });
-                  return;
-                }
+              // Extract user input first to remove prompt (which may contain >)
+              final userInput = _autocompleteController!.extractUserInput(lineText);
+              final trimmed = userInput.trim();
+              
+              // Check if user input starts with ">" (agent mode command)
+              // This prevents false positives from prompts like "~/path/to/dir>"
+              // because extractUserInput removes the prompt, so any > here is user input
+              if (trimmed.startsWith('>')) {
+                // This is an agent mode command - don't send to shell
+                widget.terminal.write('\r\n');
+                Future.delayed(const Duration(milliseconds: 100), () {
+                  _autocompleteController!.checkAndHandleAgentMode();
+                });
+                return;
               }
             }
             
@@ -681,11 +689,11 @@ class TerminalViewState extends State<TerminalView>
   }
 
   void _onInsert(String text) {
-    // Block input while AI response is streaming (except Control+C handled in _handleKeyEvent)
+    // Block input while AI response is streaming or agent mode is loading (except Control+C handled in _handleKeyEvent)
     if (widget.aiAutoCompleteEnabled && 
         _autocompleteController != null && 
-        _autocompleteController!.isStreaming) {
-      return; // Ignore input during streaming
+        (_autocompleteController!.isStreaming || _autocompleteController!.isLoadingAgent)) {
+      return; // Ignore input during streaming or agent mode
     }
 
     final key = charToTerminalKey(text.trim());
@@ -717,17 +725,19 @@ class TerminalViewState extends State<TerminalView>
       return resultOverride;
     }
 
-    // Handle Control+C to stop AI response streaming
+    // Handle Control+C to stop AI response streaming or agent mode
     if (event is KeyDownEvent && 
         widget.aiAutoCompleteEnabled && 
         _autocompleteController != null &&
-        _autocompleteController!.isStreaming) {
+        (_autocompleteController!.isStreaming || _autocompleteController!.isLoadingAgent)) {
       final isCtrlPressed = HardwareKeyboard.instance.isControlPressed;
       final isMetaPressed = HardwareKeyboard.instance.isMetaPressed;
       
       if ((isCtrlPressed || isMetaPressed) && 
           event.logicalKey == LogicalKeyboardKey.keyC) {
-        _autocompleteController!.stopStreaming();
+        if (_autocompleteController!.isStreaming) {
+          _autocompleteController!.stopStreaming();
+        }
         // Also send Control+C to terminal (interrupt signal)
         widget.terminal.keyInput(
           TerminalKey.keyC,
@@ -736,7 +746,7 @@ class TerminalViewState extends State<TerminalView>
         return KeyEventResult.handled;
       }
       
-      // Block all other input during streaming
+      // Block all other input during streaming or agent mode
       return KeyEventResult.handled;
     }
 
@@ -794,7 +804,11 @@ class TerminalViewState extends State<TerminalView>
     }
 
     // 6. Handle autocomplete if enabled and active
-    if (widget.aiAutoCompleteEnabled && _autocompleteController != null) {
+    // Skip autocomplete interactions during streaming or agent mode
+    if (widget.aiAutoCompleteEnabled && 
+        _autocompleteController != null &&
+        !_autocompleteController!.isStreaming &&
+        !_autocompleteController!.isLoadingAgent) {
       if (event is KeyDownEvent) {
         final key = keyToTerminalKey(event.logicalKey);
         
@@ -827,6 +841,7 @@ class TerminalViewState extends State<TerminalView>
             return KeyEventResult.handled;
           }
         }
+        // When no completions are available, arrow keys fall through to terminal for normal cursor movement
         
         // Trigger autocomplete check on backspace and other editing keys
         if (key == TerminalKey.backspace || key == TerminalKey.delete) {
@@ -843,33 +858,29 @@ class TerminalViewState extends State<TerminalView>
     }
 
     // Check for agent mode BEFORE sending Enter to terminal
-    // If current line contains ">", intercept Enter and handle agent mode instead
+    // Extract user input first to avoid false positives from prompts containing >
     if (key == TerminalKey.enter && widget.aiAutoCompleteEnabled && _autocompleteController != null) {
       final buffer = widget.terminal.buffer;
       final currentLine = buffer.currentLine;
       final cursorX = buffer.cursorX;
       final lineText = currentLine.getText(0, cursorX);
       
-      // Check if line contains ">" anywhere (agent mode command)
-      // This check must happen BEFORE prompt extraction, as prompt extraction might remove the >
-      if (lineText.contains('>')) {
-        // Extract user input to get the message after the prompt and >
-        final userInput = _autocompleteController!.extractUserInput(lineText);
-        final trimmed = userInput.trim();
-        
-        // Check if the extracted input starts with ">" or contains ">" pattern
-        // Pattern: "> something" anywhere in the line
-        final agentMatch = RegExp(r'>\s*(\S.*)').firstMatch(lineText);
-        if (agentMatch != null || trimmed.startsWith('>')) {
-          // This is an agent mode command - don't send to shell
-          // Write newline to echo the command, then handle agent mode
-          widget.terminal.write('\r\n');
-          // Then handle agent mode
-          Future.delayed(const Duration(milliseconds: 100), () {
-            _autocompleteController!.checkAndHandleAgentMode();
-          });
-          return KeyEventResult.handled;
-        }
+      // Extract user input first to remove prompt (which may contain >)
+      final userInput = _autocompleteController!.extractUserInput(lineText);
+      final trimmed = userInput.trim();
+      
+      // Check if user input starts with ">" (agent mode command)
+      // This prevents false positives from prompts like "~/path/to/dir>"
+      // because extractUserInput removes the prompt, so any > here is user input
+      if (trimmed.startsWith('>')) {
+        // This is an agent mode command - don't send to shell
+        // Write newline to echo the command, then handle agent mode
+        widget.terminal.write('\r\n');
+        // Then handle agent mode
+        Future.delayed(const Duration(milliseconds: 100), () {
+          _autocompleteController!.checkAndHandleAgentMode();
+        });
+        return KeyEventResult.handled;
       }
     }
 

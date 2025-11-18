@@ -173,28 +173,17 @@ class AutocompleteController extends ChangeNotifier {
         final previousLine = buffer.lines[absoluteCursorY - 1];
         final lineText = previousLine.getText(0, previousLine.length);
         
-        // Fallback: check if line contains > at any position (in case prompt detection failed)
-        // Look for pattern like "> something" anywhere in the line
-        final directMatch = RegExp(r'>\s*(\S.*)').firstMatch(lineText);
-        if (directMatch != null) {
-          final message = directMatch.group(1)?.trim() ?? '';
-          if (message.isNotEmpty) {
-            _fetchAgentResponse(message);
-            return true;
-          }
-        }
-        
         // Extract user input by removing prompt
         final userInput = extractUserInput(lineText);
         final trimmed = userInput.trim();
         
-        // Check if command starts with > (either directly or after prompt removal)
+        // Check if user input starts with ">" (agent mode command)
+        // Since extractUserInput removes the prompt, any > here is user input
         if (trimmed.startsWith('>')) {
-          final message = trimmed.substring(1).trim();
-          if (message.isNotEmpty) {
-            _fetchAgentResponse(message);
-            return true;
-          }
+          // Extract message after ">" (e.g., "> hi" -> "hi", ">" -> "")
+          final message = trimmed.length > 1 ? trimmed.substring(1).trim() : '';
+          _fetchAgentResponse(message);
+          return true;
         }
       }
     } catch (e) {
@@ -260,6 +249,12 @@ class AutocompleteController extends ChangeNotifier {
           terminal.write('\r\n');
           // Stream the response character by character for generative effect
           _streamTextToTerminal(ansiText, () {
+            // Clear agent loading flag immediately when streaming completes
+            // This unblocks input as soon as streaming finishes
+            _isLoadingAgent = false;
+            _isLoading = false; // Also clear autocomplete loading flag
+            notifyListeners();
+            
             // After streaming is complete, reset all formatting and add newline
             // Write reset codes AFTER newline to ensure they apply to the next line
             // Use comprehensive reset codes to ensure everything is reset:
@@ -273,15 +268,22 @@ class AutocompleteController extends ChangeNotifier {
               terminal.keyInput(TerminalKey.enter);
             });
           });
+        } else {
+          // No markdown to stream, clear loading flag immediately
+          _isLoadingAgent = false;
+          _isLoading = false;
+          notifyListeners();
         }
       } else {
         _agentResponse = null;
+        _isLoadingAgent = false;
+        _isLoading = false;
+        notifyListeners();
       }
     } catch (e) {
       _agentResponse = null;
-    } finally {
       _isLoadingAgent = false;
-      _isLoading = false; // Also clear autocomplete loading flag
+      _isLoading = false;
       notifyListeners();
     }
   }
@@ -292,14 +294,23 @@ class AutocompleteController extends ChangeNotifier {
     // Try to find prompt patterns (e.g., "user@host % ", "user@host $ ", "bash-3.2$ ", "C:\> ", etc.)
     int promptEnd = -1;
     
-    // Pattern 1: Look for % $ # > followed by space (most common)
+    // Define promptMarkerPattern here so it's available for all patterns
     final promptMarkerPattern = RegExp(r'[%$#>]\s+');
-    final markerMatches = promptMarkerPattern.allMatches(lineText);
-    if (markerMatches.isNotEmpty) {
-      promptEnd = markerMatches.last.end;
+    
+    // Pattern 1b: Look for > at end of path-like prompt (e.g., "~/path/to/dir>" for nu shell)
+    // Check this FIRST because it's more specific and prevents Pattern 1 from matching user input
+    // Match path-like patterns ending with > (no space after >)
+    // Pattern: starts with ~ or /, contains path characters, ends with >
+    // This matches prompts like "~/Projects/personal/xterm/example>" but not user input
+    final pathEndingWithGreater = RegExp(r'^[~/][\w\.\-/]+\>\s*');
+    final pathMatch = pathEndingWithGreater.firstMatch(lineText);
+    if (pathMatch != null) {
+      // We found a path prompt ending with >, so everything after is user input
+      promptEnd = pathMatch.end;
     }
     
     // Pattern 2: Look for shell prompts like "bash-3.2$ ", "zsh$ ", etc.
+    // Check this BEFORE Pattern 1 because it's more specific
     if (promptEnd == -1) {
       final shellPromptPattern = RegExp(r'[\w\-\.]+\$?\s+');
       final shellMatches = shellPromptPattern.allMatches(lineText);
@@ -314,6 +325,16 @@ class AutocompleteController extends ChangeNotifier {
       }
     }
     
+    // Pattern 1: Look for % $ # > followed by space (most common)
+    // Only check if more specific patterns didn't match
+    // Use FIRST match, not last, to avoid matching user input that starts with >
+    if (promptEnd == -1) {
+      final markerMatch = promptMarkerPattern.firstMatch(lineText);
+      if (markerMatch != null) {
+        promptEnd = markerMatch.end;
+      }
+    }
+    
     // Pattern 3: Look for user@host pattern followed by space or colon+space
     if (promptEnd == -1) {
       final userHostPattern = RegExp(r'\w+@[\w\-\.]+[:\s]+');
@@ -325,7 +346,7 @@ class AutocompleteController extends ChangeNotifier {
             final afterMatch = lineText.substring(end);
             final markerMatch = promptMarkerPattern.firstMatch(afterMatch);
             if (markerMatch != null) {
-              promptEnd = end + markerMatch.end;
+              promptEnd = end + markerMatch.end.toInt();
               break;
             }
           }
@@ -492,6 +513,8 @@ class AutocompleteController extends ChangeNotifier {
   void stopStreaming() {
     if (_isStreaming) {
       _isStreaming = false;
+      _isLoadingAgent = false; // Also clear agent loading flag
+      _isLoading = false;
       _streamTimer?.cancel();
       _streamTimer = null;
       notifyListeners();

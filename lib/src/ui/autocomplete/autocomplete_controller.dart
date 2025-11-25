@@ -28,6 +28,7 @@ class AutocompleteController extends ChangeNotifier {
   int? _lastCheckedLine; // Track last line we checked to avoid duplicate checks
   bool _isStreaming = false; // Track if AI response is currently streaming
   Timer? _streamTimer; // Timer for streaming chunks
+  bool _disposed = false; // Track if controller has been disposed
 
   List<String> get completions => _completions;
   int get selectedIndex => _selectedIndex;
@@ -36,9 +37,8 @@ class AutocompleteController extends ChangeNotifier {
   bool get isLoadingAgent => _isLoadingAgent;
   bool get hasCompletions => _completions.isNotEmpty;
   String? get agentResponse => _agentResponse;
-  bool get isStreaming => _isStreaming; // Expose streaming state
+  bool get isStreaming => _isStreaming;
   
-  /// Check if there's actual user input (not empty, excluding prompt)
   bool get hasValidInput {
     try {
       final buffer = terminal.buffer;
@@ -46,25 +46,27 @@ class AutocompleteController extends ChangeNotifier {
       final cursorX = buffer.cursorX;
       final lineText = currentLine.getText(0, cursorX);
       
-      // Extract user input by removing prompt
       final userInput = extractUserInput(lineText);
       final trimmed = userInput.trim();
       
-      // Must have at least 1 non-whitespace character
       if (trimmed.isEmpty) {
         return false;
       }
       
-      // Get the last word to ensure there's actual content
       final lastSpaceIndex = trimmed.lastIndexOf(' ');
       final lastWord = lastSpaceIndex >= 0 
           ? trimmed.substring(lastSpaceIndex + 1).trim() 
           : trimmed.trim();
       
-      // Only return true if there's actual content (not just spaces)
       return lastWord.isNotEmpty && lastWord.length > 0;
     } catch (e) {
       return false;
+    }
+  }
+
+  void _safeNotifyListeners() {
+    if (!_disposed) {
+      notifyListeners();
     }
   }
 
@@ -113,13 +115,18 @@ class AutocompleteController extends ChangeNotifier {
   }
 
   void _onTerminalChange() {
+    // Don't process changes if controller is disposed
+    if (_disposed) return;
+    
     // Check for agent mode when terminal changes (e.g., after Enter is pressed)
     // This is more reliable than using a delay
     final absoluteCursorY = terminal.buffer.absoluteCursorY;
     if (absoluteCursorY != _lastCheckedLine) {
       _lastCheckedLine = absoluteCursorY;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        checkAndHandleAgentMode();
+        if (!_disposed) {
+          checkAndHandleAgentMode();
+        }
       });
     }
     
@@ -253,9 +260,11 @@ class AutocompleteController extends ChangeNotifier {
         final userInput = extractUserInput(lineText);
         final trimmed = userInput.trim();
         
-        // Check if user input starts with ">" (agent mode command)
-        // Since extractUserInput removes the prompt, any > here is user input
-        if (trimmed.startsWith('>')) {
+        // Only trigger agent mode if:
+        // 1. User input starts with ">" 
+        // 2. User input is NOT the entire line (meaning prompt extraction worked)
+        // This prevents false positives when prompt extraction fails and returns the whole line
+        if (trimmed.startsWith('>') && userInput != lineText) {
           // Extract message after ">" (e.g., "> hi" -> "hi", ">" -> "")
           final message = trimmed.length > 1 ? trimmed.substring(1).trim() : '';
           _fetchAgentResponse(message);
@@ -270,11 +279,11 @@ class AutocompleteController extends ChangeNotifier {
   }
   
   Future<void> _fetchAgentResponse(String message) async {
-    if (accessToken == null) return;
+    if (accessToken == null || _disposed) return;
     
     _isLoadingAgent = true;
     _agentResponse = null;
-    notifyListeners();
+    _safeNotifyListeners();
 
     try {
       // Get context information
@@ -296,6 +305,9 @@ class AutocompleteController extends ChangeNotifier {
           'context': context,
         }),
       );
+
+      // Check if disposed after async operation
+      if (_disposed) return;
 
       if (response.statusCode == 200) {
         String markdown = '';
@@ -325,11 +337,14 @@ class AutocompleteController extends ChangeNotifier {
           terminal.write('\r\n');
           // Stream the response character by character for generative effect
           _streamTextToTerminal(ansiText, () {
+            // Check if disposed before updating state
+            if (_disposed) return;
+            
             // Clear agent loading flag immediately when streaming completes
             // This unblocks input as soon as streaming finishes
             _isLoadingAgent = false;
             _isLoading = false; // Also clear autocomplete loading flag
-            notifyListeners();
+            _safeNotifyListeners();
             
             // After streaming is complete, reset all formatting and add newline
             // Write reset codes AFTER newline to ensure they apply to the next line
@@ -346,21 +361,27 @@ class AutocompleteController extends ChangeNotifier {
           });
         } else {
           // No markdown to stream, clear loading flag immediately
-          _isLoadingAgent = false;
-          _isLoading = false;
-          notifyListeners();
+          if (!_disposed) {
+            _isLoadingAgent = false;
+            _isLoading = false;
+            _safeNotifyListeners();
+          }
         }
       } else {
+        if (!_disposed) {
+          _agentResponse = null;
+          _isLoadingAgent = false;
+          _isLoading = false;
+          _safeNotifyListeners();
+        }
+      }
+    } catch (e) {
+      if (!_disposed) {
         _agentResponse = null;
         _isLoadingAgent = false;
         _isLoading = false;
-        notifyListeners();
+        _safeNotifyListeners();
       }
-    } catch (e) {
-      _agentResponse = null;
-      _isLoadingAgent = false;
-      _isLoading = false;
-      notifyListeners();
     }
   }
   
@@ -499,7 +520,7 @@ class AutocompleteController extends ChangeNotifier {
     }
 
     _isLoading = true;
-    notifyListeners();
+    _safeNotifyListeners();
 
     try {
       // Get context information
@@ -521,6 +542,9 @@ class AutocompleteController extends ChangeNotifier {
           'context': context,
         }),
       );
+
+      // Check if disposed after async operation
+      if (_disposed) return;
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -552,8 +576,10 @@ class AutocompleteController extends ChangeNotifier {
     } catch (e) {
       _clearCompletions();
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      if (!_disposed) {
+        _isLoading = false;
+        _safeNotifyListeners();
+      }
     }
   }
 
@@ -561,7 +587,7 @@ class AutocompleteController extends ChangeNotifier {
     _completions = [];
     _selectedIndex = 0;
     _partialCommand = null;
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   bool checkAndDismissIfInvalid() {
@@ -589,15 +615,15 @@ class AutocompleteController extends ChangeNotifier {
   }
 
   void selectNext() {
-    if (_completions.isEmpty) return;
+    if (_completions.isEmpty || _disposed) return;
     _selectedIndex = (_selectedIndex + 1) % _completions.length;
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   void selectPrevious() {
-    if (_completions.isEmpty) return;
+    if (_completions.isEmpty || _disposed) return;
     _selectedIndex = (_selectedIndex - 1 + _completions.length) % _completions.length;
-    notifyListeners();
+    _safeNotifyListeners();
   }
 
   void acceptCompletion() {
@@ -627,23 +653,24 @@ class AutocompleteController extends ChangeNotifier {
       return;
     }
 
+    if (_disposed) return;
     _isStreaming = true;
-    notifyListeners();
+    _safeNotifyListeners();
 
     var index = 0;
     const chunkSize = 3; // Write 3 characters at a time for smoother effect
     const delayMs = 20; // Delay between chunks (milliseconds)
 
     void writeNextChunk() {
-      // Check if streaming was cancelled
-      if (!_isStreaming) {
+      // Check if streaming was cancelled or controller is disposed
+      if (!_isStreaming || _disposed) {
         onComplete();
         return;
       }
 
       if (index >= text.length) {
         _isStreaming = false;
-        notifyListeners();
+        _safeNotifyListeners();
         onComplete();
         return;
       }
@@ -657,7 +684,7 @@ class AutocompleteController extends ChangeNotifier {
         _streamTimer = Timer(Duration(milliseconds: delayMs), writeNextChunk);
       } else {
         _isStreaming = false;
-        notifyListeners();
+        _safeNotifyListeners();
         onComplete();
       }
     }
@@ -668,13 +695,13 @@ class AutocompleteController extends ChangeNotifier {
 
   /// Stop streaming AI response (called by Control+C)
   void stopStreaming() {
-    if (_isStreaming) {
+    if (_isStreaming && !_disposed) {
       _isStreaming = false;
       _isLoadingAgent = false; // Also clear agent loading flag
       _isLoading = false;
       _streamTimer?.cancel();
       _streamTimer = null;
-      notifyListeners();
+      _safeNotifyListeners();
       // Reset all formatting and write a newline to clean up
       // Use comprehensive reset codes to ensure everything is reset
       terminal.write('\x1b[0m\x1b[22m\x1b[39m\x1b[49m\r\n');
@@ -687,8 +714,12 @@ class AutocompleteController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _debounceTimer?.cancel();
     _streamTimer?.cancel();
+    _isStreaming = false;
+    _isLoadingAgent = false;
+    _isLoading = false;
     terminal.removeListener(_onTerminalChange);
     super.dispose();
   }

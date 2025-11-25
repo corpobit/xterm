@@ -24,6 +24,35 @@ class AutocompleteWidget extends StatelessWidget {
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
+        try {
+          final buffer = controller.terminal.buffer;
+          final currentLine = buffer.currentLine;
+          final cursorX = buffer.cursorX;
+          final lineText = currentLine.getText(0, cursorX);
+          final userInput = controller.extractUserInput(lineText);
+          final trimmed = userInput.trim();
+          
+          if (trimmed.isEmpty) {
+            Future.microtask(() {
+              if (controller.hasCompletions) {
+                controller.clear();
+              }
+            });
+            return const SizedBox.shrink();
+          }
+        } catch (e) {
+          return const SizedBox.shrink();
+        }
+        
+        if (!controller.hasValidInput) {
+          Future.microtask(() {
+            if (controller.hasCompletions) {
+              controller.clear();
+            }
+          });
+          return const SizedBox.shrink();
+        }
+        
         final cursorOffset = renderTerminal.cursorOffset;
         final isLoading = controller.isLoading;
         final hasCompletions = controller.hasCompletions;
@@ -62,7 +91,7 @@ class AutocompleteWidget extends StatelessWidget {
           );
         }
         
-        // Show completions when available
+        // Show completions when available and there's a valid remainder
         if (!hasCompletions) {
           return const SizedBox.shrink();
         }
@@ -70,19 +99,21 @@ class AutocompleteWidget extends StatelessWidget {
         final completions = controller.completions;
         final selectedIndex = controller.selectedIndex;
         final currentCompletionRemainder = controller.currentCompletionRemainder;
-
+        
+        // Only show menu if there's a valid remainder (menu should be visible)
         if (currentCompletionRemainder == null || currentCompletionRemainder.isEmpty) {
           return const SizedBox.shrink();
         }
         
-        // Position the autocomplete inline at the cursor position (same line, after cursor)
+        final lineHeight = renderTerminal.lineHeight;
+        
+        // Position the autocomplete menu below the cursor
         return Positioned(
           left: cursorOffset.dx,
-          top: cursorOffset.dy,
-          child: _AutocompleteOverlay(
+          top: cursorOffset.dy + lineHeight,
+          child: _AutocompleteMenu(
             completions: completions,
             selectedIndex: selectedIndex,
-            currentCompletionRemainder: currentCompletionRemainder,
             theme: theme,
             textStyle: textStyle,
           ),
@@ -92,45 +123,203 @@ class AutocompleteWidget extends StatelessWidget {
   }
 }
 
-class _AutocompleteOverlay extends StatelessWidget {
+class _AutocompleteMenu extends StatefulWidget {
   final List<String> completions;
   final int selectedIndex;
-  final String currentCompletionRemainder;
   final TerminalTheme theme;
   final TerminalStyle textStyle;
 
-  const _AutocompleteOverlay({
+  const _AutocompleteMenu({
     required this.completions,
     required this.selectedIndex,
-    required this.currentCompletionRemainder,
     required this.theme,
     required this.textStyle,
   });
 
   @override
+  State<_AutocompleteMenu> createState() => _AutocompleteMenuState();
+}
+
+class _AutocompleteMenuState extends State<_AutocompleteMenu> {
+  late ScrollController _scrollController;
+  int _lastSelectedIndex = -1;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController();
+    _lastSelectedIndex = widget.selectedIndex;
+  }
+
+  @override
+  void didUpdateWidget(_AutocompleteMenu oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Scroll to selected item when selection changes
+    if (widget.selectedIndex != _lastSelectedIndex) {
+      _lastSelectedIndex = widget.selectedIndex;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToSelected();
+      });
+    }
+  }
+
+  void _scrollToSelected() {
+    if (!_scrollController.hasClients) return;
+    
+    final lineHeight = widget.textStyle.fontSize * 1.2;
+    final itemHeight = lineHeight * 1.5;
+    const maxVisibleItems = 8;
+    final selectedOffset = widget.selectedIndex * itemHeight;
+    final viewportHeight = maxVisibleItems * itemHeight;
+    
+    // Calculate scroll position to center the selected item in viewport
+    final targetOffset = (selectedOffset - viewportHeight / 2 + itemHeight / 2)
+        .clamp(0.0, _scrollController.position.maxScrollExtent);
+    
+    _scrollController.animateTo(
+      targetOffset,
+      duration: const Duration(milliseconds: 150),
+      curve: Curves.easeOut,
+    );
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // Display only the remaining part (difference) of the completion
-    // Show index indicator next to it
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Only show the remaining part with transparent color (like normal terminal text)
-        Text(
-          currentCompletionRemainder,
-          style: textStyle.toTextStyle().copyWith(
-            color: theme.foreground.withOpacity(0.5),
+    final lineHeight = widget.textStyle.fontSize * 1.2;
+    final maxHeight = lineHeight * 8; // Show max 8 items, then scroll
+    final itemHeight = lineHeight * 1.8; // Increased height to prevent overflow
+    
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: maxHeight,
+        minWidth: 250,
+        maxWidth: 600,
+      ),
+      child: Material(
+        color: widget.theme.background,
+        elevation: 6,
+        shadowColor: Colors.black.withOpacity(0.4),
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          decoration: BoxDecoration(
+            color: widget.theme.background,
+            border: Border.all(
+              color: widget.theme.foreground.withOpacity(0.2),
+              width: 1,
+            ),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: ListView.builder(
+              controller: _scrollController,
+              shrinkWrap: true,
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              physics: const ClampingScrollPhysics(),
+              itemCount: widget.completions.length,
+              itemBuilder: (context, index) {
+                final isSelected = index == widget.selectedIndex;
+                
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  curve: Curves.easeOut,
+                  height: itemHeight,
+                  decoration: BoxDecoration(
+                    color: isSelected 
+                        ? widget.theme.foreground.withOpacity(0.15)
+                        : Colors.transparent,
+                    border: Border(
+                      left: BorderSide(
+                        color: isSelected 
+                            ? widget.theme.foreground.withOpacity(0.6)
+                            : Colors.transparent,
+                        width: 3,
+                      ),
+                    ),
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: null, // Handled by keyboard
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // Selection indicator
+                            if (isSelected)
+                              Container(
+                                width: 4,
+                                height: 4,
+                                margin: const EdgeInsets.only(right: 12),
+                                decoration: BoxDecoration(
+                                  color: widget.theme.foreground,
+                                  shape: BoxShape.circle,
+                                ),
+                              )
+                            else
+                              const SizedBox(width: 16),
+                            // Text content
+                            Flexible(
+                              child: Text(
+                                widget.completions[index],
+                                style: widget.textStyle.toTextStyle().copyWith(
+                                  color: isSelected
+                                      ? widget.theme.foreground
+                                      : widget.theme.foreground.withOpacity(0.85),
+                                  fontWeight: isSelected 
+                                      ? FontWeight.w600 
+                                      : FontWeight.normal,
+                                  fontSize: widget.textStyle.fontSize * 0.95,
+                                  letterSpacing: 0.2,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            // Index indicator for selected item
+                            if (isSelected)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 8),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: widget.theme.foreground.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    '${index + 1}',
+                                    style: widget.textStyle.toTextStyle().copyWith(
+                                      color: widget.theme.foreground,
+                                      fontSize: widget.textStyle.fontSize * 0.75,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
           ),
         ),
-        const SizedBox(width: 8),
-        // Index indicator
-        Text(
-          '${selectedIndex + 1}/${completions.length}',
-          style: textStyle.toTextStyle().copyWith(
-            color: theme.foreground.withOpacity(0.7),
-            fontSize: textStyle.fontSize * 0.9,
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -215,4 +404,3 @@ class _LoadingIndicatorState extends State<_LoadingIndicator>
     );
   }
 }
-

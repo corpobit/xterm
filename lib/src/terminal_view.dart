@@ -707,8 +707,14 @@ class TerminalViewState extends State<TerminalView>
       widget.terminal.textInput(text);
     }
 
-    // Trigger autocomplete check after text input
     if (widget.aiAutoCompleteEnabled && _autocompleteController != null) {
+      Future.microtask(() {
+        if (!_autocompleteController!.hasValidInput) {
+          _autocompleteController!.clear();
+        } else {
+          _autocompleteController!.checkAndDismissIfInvalid();
+        }
+      });
       _autocompleteController!.checkForAutocomplete();
     }
 
@@ -812,30 +818,35 @@ class TerminalViewState extends State<TerminalView>
       if (event is KeyDownEvent) {
         final key = keyToTerminalKey(event.logicalKey);
         
-        // Handle autocomplete interactions when completions are available
+        if (key == TerminalKey.escape) {
+          _autocompleteController!.clear();
+          return KeyEventResult.handled;
+        }
+        
         if (_autocompleteController!.hasCompletions) {
-          // Right Arrow: Navigate to next suggestion (cycles forward)
-          if (key == TerminalKey.arrowRight) {
-            _autocompleteController!.selectNext();
-            return KeyEventResult.handled;
+          final remainder = _autocompleteController!.currentCompletionRemainder;
+          final isMenuVisible = remainder != null && remainder.isNotEmpty;
+          
+          if (isMenuVisible) {
+            if (key == TerminalKey.arrowDown) {
+              _autocompleteController!.selectNext();
+              return KeyEventResult.handled;
+            }
+            
+            if (key == TerminalKey.arrowUp) {
+              _autocompleteController!.selectPrevious();
+              return KeyEventResult.handled;
+            }
           }
           
-          // Left Arrow: Navigate to previous suggestion (cycles backward)
-          // (Up/Down arrows are not used to avoid conflict with terminal history)
-          if (key == TerminalKey.arrowLeft) {
-            _autocompleteController!.selectPrevious();
-            return KeyEventResult.handled;
+          if (key == TerminalKey.enter) {
+            final remainder = _autocompleteController!.currentCompletionRemainder;
+            if (remainder != null && remainder.isNotEmpty) {
+              _autocompleteController!.acceptCompletion();
+              return KeyEventResult.handled;
+            }
           }
           
-          // Escape: Dismiss autocomplete
-          if (key == TerminalKey.escape) {
-            _autocompleteController!.clear();
-            return KeyEventResult.handled;
-          }
-          
-          // Tab: Accept current suggestion (only when autocomplete is visible)
-          // This avoids conflict with normal tab - tab only accepts when autocomplete is showing
-          // Note: Space is NOT used for acceptance - it works normally for typing
           if (key == TerminalKey.tab && !HardwareKeyboard.instance.isShiftPressed) {
             _autocompleteController!.acceptCompletion();
             return KeyEventResult.handled;
@@ -843,8 +854,16 @@ class TerminalViewState extends State<TerminalView>
         }
         // When no completions are available, arrow keys fall through to terminal for normal cursor movement
         
-        // Trigger autocomplete check on backspace and other editing keys
         if (key == TerminalKey.backspace || key == TerminalKey.delete) {
+          if (_autocompleteController!.hasCompletions) {
+            Future.microtask(() {
+              if (!_autocompleteController!.hasValidInput) {
+                _autocompleteController!.clear();
+              } else {
+                _autocompleteController!.checkAndDismissIfInvalid();
+              }
+            });
+          }
           _autocompleteController!.checkForAutocomplete();
         }
       }

@@ -37,9 +37,33 @@ class AutocompleteController extends ChangeNotifier {
   bool get isLoadingAgent => _isLoadingAgent;
   bool get hasCompletions => _completions.isNotEmpty;
   String? get agentResponse => _agentResponse;
-  bool get isStreaming => _isStreaming; // Expose streaming state
+  bool get isStreaming => _isStreaming;
   
-  /// Safely notify listeners, checking if controller is disposed
+  bool get hasValidInput {
+    try {
+      final buffer = terminal.buffer;
+      final currentLine = buffer.currentLine;
+      final cursorX = buffer.cursorX;
+      final lineText = currentLine.getText(0, cursorX);
+      
+      final userInput = extractUserInput(lineText);
+      final trimmed = userInput.trim();
+      
+      if (trimmed.isEmpty) {
+        return false;
+      }
+      
+      final lastSpaceIndex = trimmed.lastIndexOf(' ');
+      final lastWord = lastSpaceIndex >= 0 
+          ? trimmed.substring(lastSpaceIndex + 1).trim() 
+          : trimmed.trim();
+      
+      return lastWord.isNotEmpty && lastWord.length > 0;
+    } catch (e) {
+      return false;
+    }
+  }
+
   void _safeNotifyListeners() {
     if (!_disposed) {
       notifyListeners();
@@ -106,6 +130,25 @@ class AutocompleteController extends ChangeNotifier {
       });
     }
     
+    try {
+      final buffer = terminal.buffer;
+      final currentLine = buffer.currentLine;
+      final cursorX = buffer.cursorX;
+      final lineText = currentLine.getText(0, cursorX);
+      final userInput = extractUserInput(lineText);
+      final trimmed = userInput.trim();
+      
+      if (trimmed.isEmpty) {
+        _clearCompletions();
+        _debounceTimer?.cancel();
+        return;
+      }
+    } catch (e) {
+      _clearCompletions();
+      _debounceTimer?.cancel();
+      return;
+    }
+    
     // Check if current line contains ">" (agent mode) - disable autocomplete
     // Check the original lineText before prompt extraction to catch ">" anywhere
     try {
@@ -160,26 +203,26 @@ class AutocompleteController extends ChangeNotifier {
         }
       }
       
-      // Extract user input by removing prompt
-        final userInput = extractUserInput(lineText);
+      final userInput = extractUserInput(lineText);
       final trimmed = userInput.trim();
       
-      // Only trigger if there's meaningful text (at least 1 character for faster response)
       if (trimmed.isEmpty) {
         _clearCompletions();
         return;
       }
 
-      // Get the last word (after last space) for better autocomplete
       final lastSpaceIndex = trimmed.lastIndexOf(' ');
       final lastWord = lastSpaceIndex >= 0 
-          ? trimmed.substring(lastSpaceIndex + 1) 
-          : trimmed;
+          ? trimmed.substring(lastSpaceIndex + 1).trim() 
+          : trimmed.trim();
       
-      // Use the full trimmed command for API, but only if it changed
+      if (lastWord.isEmpty) {
+        _clearCompletions();
+        return;
+      }
+      
       if (trimmed != _partialCommand) {
         _partialCommand = trimmed;
-        // Fetch if there's any text (reduced from 2 to 1 character for faster suggestions)
         if (lastWord.length >= 1) {
           _fetchCompletions(trimmed);
         } else {
@@ -344,44 +387,30 @@ class AutocompleteController extends ChangeNotifier {
   
   /// Extract user input from line text by removing prompt patterns
   /// Made public for use in TerminalView to check for agent mode
+  /// Returns only the user input, never the prompt
   String extractUserInput(String lineText) {
-    // Try to find prompt patterns (e.g., "user@host % ", "user@host $ ", "bash-3.2$ ", "C:\> ", etc.)
+    if (lineText.isEmpty) {
+      return '';
+    }
+    
     int promptEnd = -1;
     
-    // Define promptMarkerPattern here so it's available for all patterns
     final promptMarkerPattern = RegExp(r'[%$#>]\s+');
     
-    // Pattern 1b: Look for > at end of path-like prompt (e.g., "~/path/to/dir>" for nu shell)
-    // Check this FIRST because it's more specific and prevents Pattern 1 from matching user input
-    // Match path-like patterns ending with > (no space after >)
-    // Pattern: starts with ~ or /, contains path characters, ends with >
-    // This matches prompts like "~/Projects/personal/xterm/example>" but not user input
     final pathEndingWithGreater = RegExp(r'^[~/][\w\.\-/]+\>\s*');
     final pathMatch = pathEndingWithGreater.firstMatch(lineText);
     if (pathMatch != null) {
-      // We found a path prompt ending with >, so everything after is user input
       promptEnd = pathMatch.end;
     }
     
-    // Pattern 2: Look for shell prompts like "bash-3.2$ ", "zsh$ ", etc.
-    // Check this BEFORE Pattern 1 because it's more specific
     if (promptEnd == -1) {
-      final shellPromptPattern = RegExp(r'[\w\-\.]+\$?\s+');
-      final shellMatches = shellPromptPattern.allMatches(lineText);
-      if (shellMatches.isNotEmpty) {
-        // Check if it looks like a shell prompt (starts at beginning of line)
-        for (final match in shellMatches) {
-          if (match.start == 0) {
-            promptEnd = match.end;
-            break;
-          }
-        }
+      final shellPromptPattern = RegExp(r'^[\w\-\.]+\$?\s+');
+      final shellMatch = shellPromptPattern.firstMatch(lineText);
+      if (shellMatch != null) {
+        promptEnd = shellMatch.end;
       }
     }
     
-    // Pattern 1: Look for % $ # > followed by space (most common)
-    // Only check if more specific patterns didn't match
-    // Use FIRST match, not last, to avoid matching user input that starts with >
     if (promptEnd == -1) {
       final markerMatch = promptMarkerPattern.firstMatch(lineText);
       if (markerMatch != null) {
@@ -389,30 +418,42 @@ class AutocompleteController extends ChangeNotifier {
       }
     }
     
-    // Pattern 3: Look for user@host pattern followed by space or colon+space
     if (promptEnd == -1) {
-      final userHostPattern = RegExp(r'\w+@[\w\-\.]+[:\s]+');
-      final userHostMatches = userHostPattern.allMatches(lineText);
-      if (userHostMatches.isNotEmpty) {
-        for (final match in userHostMatches) {
-          final end = match.end;
-          if (end < lineText.length) {
-            final afterMatch = lineText.substring(end);
-            final markerMatch = promptMarkerPattern.firstMatch(afterMatch);
-            if (markerMatch != null) {
-              promptEnd = end + markerMatch.end.toInt();
-              break;
-            }
+      final userHostPattern = RegExp(r'^\w+@[\w\-\.]+[:\s]+');
+      final userHostMatch = userHostPattern.firstMatch(lineText);
+      if (userHostMatch != null) {
+        final end = userHostMatch.end;
+        if (end < lineText.length) {
+          final afterMatch = lineText.substring(end);
+          final markerMatch = promptMarkerPattern.firstMatch(afterMatch);
+          if (markerMatch != null) {
+            promptEnd = end + markerMatch.end;
+          } else {
+            promptEnd = end;
           }
+        } else {
+          promptEnd = end;
         }
       }
     }
     
-    // Extract user input after prompt
-    if (promptEnd > 0 && promptEnd < lineText.length) {
-      return lineText.substring(promptEnd);
+    // Pattern 4: Look for Windows-style prompts like "C:\> ", "C:\Users\> ", etc.
+    if (promptEnd == -1) {
+      final windowsPromptPattern = RegExp(r'^[A-Z]:\\[^>]*>\s+');
+      final windowsMatch = windowsPromptPattern.firstMatch(lineText);
+      if (windowsMatch != null) {
+        promptEnd = windowsMatch.end;
+      }
     }
     
+    // Extract user input after prompt
+    if (promptEnd > 0 && promptEnd <= lineText.length) {
+      final userInput = lineText.substring(promptEnd);
+      return userInput;
+    }
+    
+    // If no prompt pattern found, return the whole line
+    // But this should rarely happen if prompt extraction is working
     return lineText;
   }
 
@@ -453,8 +494,28 @@ class AutocompleteController extends ChangeNotifier {
   Future<void> _fetchCompletions(String partialCommand) async {
     if (accessToken == null) return;
     
+    final trimmed = partialCommand.trim();
+    if (trimmed.isEmpty) {
+      _clearCompletions();
+      return;
+    }
+    
+    String commandToSend = extractUserInput(trimmed).trim();
+    
+    if (commandToSend.isEmpty) {
+      _clearCompletions();
+      return;
+    }
+    
+    if (commandToSend.startsWith(RegExp(r'[%$#>]\s+')) ||
+        RegExp(r'^[\w\-\.]+\$?\s+').hasMatch(commandToSend) ||
+        RegExp(r'^\w+@[\w\-\.]+[:\s]+').hasMatch(commandToSend)) {
+      _clearCompletions();
+      return;
+    }
+    
     // Don't make a new API call if one is already in progress for the same command
-    if (_isLoading && _partialCommand == partialCommand) {
+    if (_isLoading && _partialCommand == commandToSend) {
       return;
     }
 
@@ -477,7 +538,7 @@ class AutocompleteController extends ChangeNotifier {
         },
         body: jsonEncode({
           'autoComplete': true,
-          'partialCommand': partialCommand,
+          'partialCommand': commandToSend,
           'context': context,
         }),
       );
@@ -489,8 +550,23 @@ class AutocompleteController extends ChangeNotifier {
         final data = jsonDecode(response.body);
         if (data['success'] == true && data['result'] != null) {
           final completions = List<String>.from(data['result']['completions'] ?? []);
+          
+          // CRITICAL: Validate input is still valid before setting completions
+          // User might have cleared input while API call was in progress
+          if (!hasValidInput) {
+            _clearCompletions();
+            return;
+          }
+          
           _completions = completions;
           _selectedIndex = 0;
+          
+          // Double-check: if remainder is invalid, clear immediately
+          final remainder = currentCompletionRemainder;
+          if (remainder == null || remainder.isEmpty) {
+            _clearCompletions();
+            return;
+          }
         } else {
           _clearCompletions();
         }
@@ -512,6 +588,30 @@ class AutocompleteController extends ChangeNotifier {
     _selectedIndex = 0;
     _partialCommand = null;
     _safeNotifyListeners();
+  }
+
+  bool checkAndDismissIfInvalid() {
+    if (!hasCompletions) {
+      return false;
+    }
+    
+    if (!hasValidInput) {
+      _clearCompletions();
+      return true;
+    }
+    
+    try {
+      final remainder = currentCompletionRemainder;
+      if (remainder == null || remainder.isEmpty) {
+        _clearCompletions();
+        return true;
+      }
+    } catch (e) {
+      _clearCompletions();
+      return true;
+    }
+    
+    return false;
   }
 
   void selectNext() {
@@ -543,6 +643,7 @@ class AutocompleteController extends ChangeNotifier {
 
   void clear() {
     _clearCompletions();
+    notifyListeners();
   }
 
   /// Stream text to terminal character by character for generative effect
